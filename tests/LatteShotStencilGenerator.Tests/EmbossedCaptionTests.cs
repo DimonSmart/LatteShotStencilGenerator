@@ -71,4 +71,42 @@ public sealed class EmbossedCaptionTests
 
         Assert.InRange(mesh.Triangles.SelectMany(triangle => new[] { triangle.A.Z, triangle.B.Z, triangle.C.Z }).Max(), 1.5519f, 1.5521f);
     }
+
+    [Fact]
+    public void Non_empty_caption_mesh_is_watertight_and_serializes_to_stl()
+    {
+        var preset = Preset with { CaptionArea = new RectMm(20, 5, 48, 20) };
+        var caption = Assert.IsType<EmbossedCaption>(EmbossedCaption.Create(preset, new CaptionSettings("LATTE", CaptionFont.Block), Fonts));
+        var mesh = CardMeshGenerator.Generate(CardGeometry.Create(preset, StencilArtwork.Empty, caption));
+
+        var validation = MeshValidator.Validate(mesh);
+        Assert.True(validation.IsValid, validation.Message);
+
+        var bytes = BinaryStlSerializer.Serialize(mesh);
+        Assert.Equal(BinaryStlSerializer.HeaderLength + sizeof(uint) + mesh.Triangles.Count * BinaryStlSerializer.TriangleRecordLength, bytes.Length);
+        Assert.Equal((uint)mesh.Triangles.Count, BitConverter.ToUInt32(bytes, BinaryStlSerializer.HeaderLength));
+    }
+
+    [Fact]
+    public void Nested_caption_contours_are_tessellated_as_watertight_relief()
+    {
+        var outer = Contour((30, 8), (55, 8), (55, 26), (30, 26), StencilFillRule.EvenOdd);
+        var inner = Contour((36, 13), (49, 13), (49, 21), (36, 21), StencilFillRule.EvenOdd);
+        var caption = new EmbossedCaption(
+            new CaptionSettings("O", CaptionFont.Block),
+            [outer, inner],
+            Preset.RaisedSurfaceZ + EmbossedCaption.EmbossHeight);
+        var mesh = CardMeshGenerator.Generate(CardGeometry.Create(Preset, StencilArtwork.Empty, caption));
+
+        var validation = MeshValidator.Validate(mesh);
+        Assert.True(validation.IsValid, validation.Message);
+    }
+
+    private static StencilContour Contour(
+        (double X, double Y) a,
+        (double X, double Y) b,
+        (double X, double Y) c,
+        (double X, double Y) d,
+        StencilFillRule fillRule) =>
+        new([new(a.X, a.Y), new(b.X, b.Y), new(c.X, c.Y), new(d.X, d.Y), new(a.X, a.Y)], fillRule);
 }
