@@ -122,12 +122,7 @@ public static class CardMeshGenerator
         {
             var baseLoop = baseLoops.FirstOrDefault(candidate => SameBounds(candidate, topLoop));
             if (baseLoop is null)
-            {
-                static string Describe(IReadOnlyList<Vector3> loop) =>
-                    $"[{loop.Min(point => point.X):R},{loop.Min(point => point.Y):R}..{loop.Max(point => point.X):R},{loop.Max(point => point.Y):R}; n={loop.Count}]";
-                throw new InvalidOperationException(
-                    $"Caption boundary mismatch. top={Describe(topLoop)}; base={string.Join(", ", baseLoops.Select(Describe))}");
-            }
+                throw new InvalidOperationException("Caption top and base boundaries do not describe the same contours.");
             baseLoops.Remove(baseLoop);
 
             if (MathF.Sign(LoopArea(topLoop)) != MathF.Sign(LoopArea(baseLoop)))
@@ -177,15 +172,17 @@ public static class CardMeshGenerator
     {
         var topDistances = LoopDistances(top);
         var bottomDistances = LoopDistances(bottom);
-        if (MathF.Abs(topDistances[^1] - bottomDistances[^1]) > 0.001f)
+        var topLength = topDistances[^1];
+        var bottomLength = bottomDistances[^1];
+        if (MathF.Abs(topLength - bottomLength) > 0.001f)
             throw new InvalidOperationException("Caption top and base boundary lengths differ.");
 
         var ti = 0;
         var bi = 0;
-        while (ti < top.Count || bi < bottom.Count)
+        while (ti < top.Count && bi < bottom.Count)
         {
-            var topNext = topDistances[ti + 1];
-            var bottomNext = bottomDistances[bi + 1];
+            var topNext = topDistances[ti + 1] / topLength;
+            var bottomNext = bottomDistances[bi + 1] / bottomLength;
 
             if (SameDistance(topNext, bottomNext))
             {
@@ -215,6 +212,9 @@ public static class CardMeshGenerator
                 bi++;
             }
         }
+
+        if (ti != top.Count || bi != bottom.Count)
+            throw new InvalidOperationException("Caption wall boundary subdivision could not be stitched.");
     }
 
     private static float[] LoopDistances(IReadOnlyList<Vector3> loop)
