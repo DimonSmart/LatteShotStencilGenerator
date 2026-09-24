@@ -264,6 +264,7 @@ public static class CardMeshGenerator
     private static IEnumerable<Triangle> TessellateTop(Tess tess, float z)
     {
         tess.Tessellate(WindingRule.NonZero, ElementType.Polygons, 3);
+        var raw = new List<Triangle>(tess.ElementCount);
         for (var i = 0; i < tess.ElementCount; i++)
         {
             var element = tess.Elements[(i * 3)..((i + 1) * 3)];
@@ -274,9 +275,67 @@ public static class CardMeshGenerator
             var c = ToVector(tess.Vertices[element[2]].Position, z);
             var cross = Vector3.Cross(b - a, c - a);
             if (cross.LengthSquared() <= 1e-12f) continue;
-            yield return cross.Z >= 0 ? new Triangle(a, b, c) : new Triangle(a, c, b);
+            raw.Add(cross.Z >= 0 ? new Triangle(a, b, c) : new Triangle(a, c, b));
+        }
+
+        // LibTess can return a long edge opposite several collinear shorter edges when
+        // multiple aligned contours are tessellated together. Split every triangle edge
+        // at all tessellation vertices lying on it so internal edges pair exactly.
+        var vertices = raw
+            .SelectMany(triangle => new[] { triangle.A, triangle.B, triangle.C })
+            .Distinct()
+            .ToArray();
+
+        foreach (var triangle in raw)
+        {
+            var boundary = EdgePoints(triangle.A, triangle.B, vertices)
+                .Concat(EdgePoints(triangle.B, triangle.C, vertices))
+                .Concat(EdgePoints(triangle.C, triangle.A, vertices))
+                .ToArray();
+            var centre = (triangle.A + triangle.B + triangle.C) / 3f;
+
+            for (var i = 0; i < boundary.Length; i++)
+            {
+                var next = boundary[(i + 1) % boundary.Length];
+                var split = new Triangle(centre, boundary[i], next);
+                if (Vector3.Cross(split.B - split.A, split.C - split.A).LengthSquared() > 1e-12f)
+                    yield return split;
+            }
         }
     }
+
+    private static IEnumerable<Vector3> EdgePoints(Vector3 start, Vector3 end, IReadOnlyList<Vector3> vertices)
+    {
+        var edge = new Vector2(end.X - start.X, end.Y - start.Y);
+        var lengthSquared = edge.LengthSquared();
+        if (lengthSquared <= 1e-12f)
+        {
+            yield return start;
+            yield break;
+        }
+
+        yield return start;
+        foreach (var candidate in vertices
+                     .Where(candidate => !SamePoint(candidate, start) && !SamePoint(candidate, end))
+                     .Select(candidate => (Point: candidate, T: SegmentParameter(start, edge, lengthSquared, candidate)))
+                     .Where(candidate => candidate.T > 0f && candidate.T < 1f && IsOnSegment(start, edge, candidate.Point))
+                     .OrderBy(candidate => candidate.T))
+        {
+            yield return candidate.Point;
+        }
+    }
+
+    private static float SegmentParameter(Vector3 start, Vector2 edge, float lengthSquared, Vector3 point) =>
+        ((point.X - start.X) * edge.X + (point.Y - start.Y) * edge.Y) / lengthSquared;
+
+    private static bool IsOnSegment(Vector3 start, Vector2 edge, Vector3 point)
+    {
+        var cross = edge.X * (point.Y - start.Y) - edge.Y * (point.X - start.X);
+        return MathF.Abs(cross) <= 0.00001f * MathF.Max(1f, edge.Length());
+    }
+
+    private static bool SamePoint(Vector3 first, Vector3 second) =>
+        Same(first.X, second.X) && Same(first.Y, second.Y);
 
     private static void AddWorkingArea(ICollection<Triangle> triangles, CardGeometry geometry, float bottom, float top)
     {
