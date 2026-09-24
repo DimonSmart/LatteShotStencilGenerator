@@ -31,16 +31,13 @@ public static class CardMeshGenerator
         for (var column = 0; column < 3; column++)
         {
             if (row == 1 && column == 1) continue;
-            if (row == 0 && geometry.Caption is not null)
+            if (row == 0 && column == 1 && geometry.Caption is not null)
             {
-                if (column == 0)
-                {
-                    AddCaptionAreaTop(triangles,
-                    [
-                        new PointMm(x[0], y[0]), new PointMm(x[1], y[0]), new PointMm(x[2], y[0]), new PointMm(x[3], y[0]),
-                        new PointMm(x[3], y[1]), new PointMm(x[2], y[1]), new PointMm(x[1], y[1]), new PointMm(x[0], y[1])
-                    ], geometry.Caption, high);
-                }
+                AddCaptionAreaTop(
+                    triangles,
+                    new RectMm(x[column], y[row], x[column + 1] - x[column], y[row + 1] - y[row]),
+                    geometry.Caption,
+                    high);
                 continue;
             }
             var z = row == 1 && column == 1 ? low : high;
@@ -88,10 +85,10 @@ public static class CardMeshGenerator
             AddQuad(triangles, edge.End, edge.Start, ToZ(edge.Start, baseZ), ToZ(edge.End, baseZ));
     }
 
-    private static void AddCaptionAreaTop(ICollection<Triangle> triangles, IEnumerable<PointMm> areaBoundary, EmbossedCaption caption, float z)
+    private static void AddCaptionAreaTop(ICollection<Triangle> triangles, RectMm topArea, EmbossedCaption caption, float z)
     {
         var tess = new Tess();
-        tess.AddContour(ToVertices(areaBoundary));
+        tess.AddContour(ToVertices(Rectangle(topArea)));
         AddCaptionContours(tess, caption, reverse: true);
         foreach (var triangle in TessellateTop(tess, z))
             triangles.Add(triangle);
