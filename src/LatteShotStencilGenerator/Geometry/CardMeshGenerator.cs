@@ -117,12 +117,13 @@ public static class CardMeshGenerator
     {
         var baseLoops = BuildBoundaryLoops(baseBoundary.Select(edge => new BoundaryEdge(edge.End, edge.Start)));
         var topLoops = BuildBoundaryLoops(topBoundary);
-        var baseByBounds = baseLoops.ToDictionary(LoopBoundsKey);
 
         foreach (var topLoop in topLoops)
         {
-            if (!baseByBounds.TryGetValue(LoopBoundsKey(topLoop), out var baseLoop))
+            var baseLoop = baseLoops.FirstOrDefault(candidate => SameBounds(candidate, topLoop));
+            if (baseLoop is null)
                 throw new InvalidOperationException("Caption top and base boundaries do not describe the same contours.");
+            baseLoops.Remove(baseLoop);
 
             if (MathF.Sign(LoopArea(topLoop)) != MathF.Sign(LoopArea(baseLoop)))
                 baseLoop.Reverse();
@@ -231,8 +232,11 @@ public static class CardMeshGenerator
             return point.X * next.Y - next.X * point.Y;
         }).Sum() / 2f;
 
-    private static string LoopBoundsKey(IReadOnlyList<Vector3> loop) =>
-        $"{loop.Min(point => point.X):R},{loop.Min(point => point.Y):R},{loop.Max(point => point.X):R},{loop.Max(point => point.Y):R}";
+    private static bool SameBounds(IReadOnlyList<Vector3> first, IReadOnlyList<Vector3> second) =>
+        Same(first.Min(point => point.X), second.Min(point => point.X)) &&
+        Same(first.Min(point => point.Y), second.Min(point => point.Y)) &&
+        Same(first.Max(point => point.X), second.Max(point => point.X)) &&
+        Same(first.Max(point => point.Y), second.Max(point => point.Y));
 
     private static void RotateTo<T>(List<T> items, int index)
     {
@@ -368,6 +372,7 @@ public static class CardMeshGenerator
         (Same(edge.Start.Y, area.Bottom) && Same(edge.End.Y, area.Bottom));
 
     private static bool Same(float actual, double expected) => MathF.Abs(actual - (float)expected) < 0.0001f;
+    private static bool Same(float first, float second) => MathF.Abs(first - second) < 0.0001f;
 
     private static Vector3 V(float x, float y, float z) => new(x, y, z);
 
