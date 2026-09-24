@@ -81,12 +81,8 @@ public sealed class EmbossedCaptionTests
         var mesh = CardMeshGenerator.Generate(CardGeometry.Create(preset, StencilArtwork.Empty, caption));
 
         var validation = MeshValidator.Validate(mesh);
-        if (!validation.IsValid)
-        {
-            foreach (var edge in FindInvalidEdges(mesh))
-                Console.WriteLine(edge);
-        }
-        Assert.True(validation.IsValid, validation.Message);
+        var invalidEdges = FindInvalidEdges(mesh).ToArray();
+        Assert.True(validation.IsValid, validation.Message + Environment.NewLine + string.Join(Environment.NewLine, invalidEdges));
 
         var bytes = BinaryStlSerializer.Serialize(mesh);
         Assert.Equal(BinaryStlSerializer.HeaderLength + sizeof(uint) + mesh.Triangles.Count * BinaryStlSerializer.TriangleRecordLength, bytes.Length);
