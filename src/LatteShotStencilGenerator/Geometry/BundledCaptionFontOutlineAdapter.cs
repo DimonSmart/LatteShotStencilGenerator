@@ -1,3 +1,5 @@
+using LibTessDotNet;
+
 namespace LatteShotStencilGenerator.Geometry;
 
 /// <summary>Deterministic local outlines for the bundled caption fonts.</summary>
@@ -16,9 +18,55 @@ public sealed class BundledCaptionFontOutlineAdapter : ICaptionFontOutlineAdapte
         var advance = glyphWidth + 2;
         var contours = new List<StencilContour>();
         for (var index = 0; index < text.Length; index++)
-            if (Segments.TryGetValue(char.ToUpperInvariant(text[index]), out var segments))
-                foreach (var segment in segments) contours.Add(Segment(segment, index * advance, glyphWidth));
+        {
+            if (!Segments.TryGetValue(char.ToUpperInvariant(text[index]), out var segments)) continue;
+
+            var strokes = segments
+                .Select(segment => Segment(segment, index * advance, glyphWidth))
+                .ToArray();
+            contours.AddRange(UnionContours(strokes));
+        }
+
         return new CaptionOutline(contours, Math.Max(1, text.Length * advance - 2), glyphHeight);
+    }
+
+    private static IReadOnlyList<StencilContour> UnionContours(IReadOnlyList<StencilContour> contours)
+    {
+        if (contours.Count == 0) return [];
+
+        var tess = new Tess();
+        foreach (var contour in contours)
+        {
+            tess.AddContour(contour.Points
+                .Take(contour.Points.Count - 1)
+                .Select(point => new ContourVertex
+                {
+                    Position = new Vec3 { X = (float)point.X, Y = (float)point.Y, Z = 0 }
+                })
+                .ToArray());
+        }
+
+        // The seven-segment glyph is assembled from rectangular strokes that overlap at joins.
+        // Convert that filled arrangement into its actual non-overlapping boundaries before the
+        // caption is scaled and passed to the mesh generator.
+        tess.Tessellate(WindingRule.NonZero, ElementType.BoundaryContours, 3);
+
+        var result = new List<StencilContour>(tess.ElementCount);
+        for (var i = 0; i < tess.ElementCount; i++)
+        {
+            var start = tess.Elements[i * 2];
+            var count = tess.Elements[i * 2 + 1];
+            if (count < 3) continue;
+
+            var points = Enumerable.Range(start, count)
+                .Select(index => tess.Vertices[index].Position)
+                .Select(point => new PointMm(point.X, point.Y))
+                .ToList();
+            points.Add(points[0]);
+            result.Add(new StencilContour(points, StencilFillRule.NonZero));
+        }
+
+        return result;
     }
 
     private static StencilContour Segment(char segment, double offset, double width)
