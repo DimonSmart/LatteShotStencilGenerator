@@ -122,7 +122,12 @@ public static class CardMeshGenerator
         {
             var baseLoop = baseLoops.FirstOrDefault(candidate => SameBounds(candidate, topLoop));
             if (baseLoop is null)
-                throw new InvalidOperationException("Caption top and base boundaries do not describe the same contours.");
+            {
+                static string Describe(IReadOnlyList<Vector3> loop) =>
+                    $"[{loop.Min(point => point.X):R},{loop.Min(point => point.Y):R}..{loop.Max(point => point.X):R},{loop.Max(point => point.Y):R}; n={loop.Count}]";
+                throw new InvalidOperationException(
+                    $"Caption boundary mismatch. top={Describe(topLoop)}; base={string.Join(", ", baseLoops.Select(Describe))}");
+            }
             baseLoops.Remove(baseLoop);
 
             if (MathF.Sign(LoopArea(topLoop)) != MathF.Sign(LoopArea(baseLoop)))
