@@ -31,9 +31,16 @@ public static class CardMeshGenerator
         for (var column = 0; column < 3; column++)
         {
             if (row == 1 && column == 1) continue;
-            if (row == 0 && column == 1 && geometry.Caption is not null)
+            if (row == 0 && geometry.Caption is not null)
             {
-                AddCaptionAreaTop(triangles, geometry.Preset.CaptionArea, geometry.Caption, high);
+                if (column == 0)
+                {
+                    AddCaptionAreaTop(triangles,
+                    [
+                        new PointMm(x[0], y[0]), new PointMm(x[1], y[0]), new PointMm(x[2], y[0]), new PointMm(x[3], y[0]),
+                        new PointMm(x[3], y[1]), new PointMm(x[2], y[1]), new PointMm(x[1], y[1]), new PointMm(x[0], y[1])
+                    ], geometry.Caption, high);
+                }
                 continue;
             }
             var z = row == 1 && column == 1 ? low : high;
@@ -65,34 +72,51 @@ public static class CardMeshGenerator
     private static void AddCaption(ICollection<Triangle> triangles, EmbossedCaption? caption, float baseZ)
     {
         if (caption is null) return;
-        foreach (var contour in caption.Contours)
+
+        var tess = new Tess();
+        AddCaptionContours(tess, caption, reverse: false);
+        var boundary = new Dictionary<(string First, string Second), (Vector3 Start, Vector3 End, int Count)>();
+        foreach (var triangle in TessellateTop(tess, (float)caption.TopZ))
         {
-            var points = contour.Points.Take(contour.Points.Count - 1).ToArray();
-            if (points.Length < 3) continue;
-            var top = points.Select(point => V((float)point.X, (float)point.Y, (float)caption.TopZ)).ToArray();
-            for (var i = 1; i < top.Length - 1; i++)
-                triangles.Add(new Triangle(top[0], top[i], top[i + 1]));
-            for (var i = 0; i < top.Length; i++)
-            {
-                var next = (i + 1) % top.Length;
-                AddQuad(triangles, top[next], top[i], ToZ(top[i], baseZ), ToZ(top[next], baseZ));
-            }
+            triangles.Add(triangle);
+            AddBoundary(boundary, triangle.A, triangle.B);
+            AddBoundary(boundary, triangle.B, triangle.C);
+            AddBoundary(boundary, triangle.C, triangle.A);
         }
+
+        foreach (var edge in boundary.Values.Where(edge => edge.Count == 1))
+            AddQuad(triangles, edge.End, edge.Start, ToZ(edge.Start, baseZ), ToZ(edge.End, baseZ));
     }
 
-    private static void AddCaptionAreaTop(ICollection<Triangle> triangles, RectMm area, EmbossedCaption caption, float z)
+    private static void AddCaptionAreaTop(ICollection<Triangle> triangles, IEnumerable<PointMm> areaBoundary, EmbossedCaption caption, float z)
     {
         var tess = new Tess();
-        tess.AddContour(ToVertices(Rectangle(area)));
+        tess.AddContour(ToVertices(areaBoundary));
+        AddCaptionContours(tess, caption, reverse: true);
+        foreach (var triangle in TessellateTop(tess, z))
+            triangles.Add(triangle);
+    }
+
+    private static void AddCaptionContours(Tess tess, EmbossedCaption caption, bool reverse)
+    {
         foreach (var contour in caption.Contours)
-            tess.AddContour(ToVertices(contour.Points.Take(contour.Points.Count - 1).Reverse()));
+            tess.AddContour(ToVertices(NormalizeWinding(contour, caption.Contours, reverse)));
+    }
+
+    private static IEnumerable<Triangle> TessellateTop(Tess tess, float z)
+    {
         tess.Tessellate(WindingRule.NonZero, ElementType.Polygons, 3);
         for (var i = 0; i < tess.ElementCount; i++)
         {
             var element = tess.Elements[(i * 3)..((i + 1) * 3)];
             if (element.Any(index => index == Tess.Undef)) continue;
-            var triangle = new Triangle(ToVector(tess.Vertices[element[0]].Position, z), ToVector(tess.Vertices[element[1]].Position, z), ToVector(tess.Vertices[element[2]].Position, z));
-            if (Vector3.Cross(triangle.B - triangle.A, triangle.C - triangle.A).LengthSquared() > 1e-12f) triangles.Add(triangle);
+
+            var a = ToVector(tess.Vertices[element[0]].Position, z);
+            var b = ToVector(tess.Vertices[element[1]].Position, z);
+            var c = ToVector(tess.Vertices[element[2]].Position, z);
+            var cross = Vector3.Cross(b - a, c - a);
+            if (cross.LengthSquared() <= 1e-12f) continue;
+            yield return cross.Z >= 0 ? new Triangle(a, b, c) : new Triangle(a, c, b);
         }
     }
 
