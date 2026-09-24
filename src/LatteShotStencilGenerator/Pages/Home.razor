@@ -1,0 +1,132 @@
+@page "/"
+@inject ISvgImportAdapter SvgImporter
+@inject ICaptionFontOutlineAdapter CaptionFontOutlines
+
+<PageTitle>Latte Card Generator</PageTitle>
+
+<section class="workspace">
+    <h1>Latte Card Generator</h1>
+    <p><strong>@Preset.Name</strong> · immutable reference layout</p>
+    <svg class="card-preview" viewBox="0 0 @Preset.CardWidth @Preset.CardHeight" role="img" aria-label="Reference stencil card geometry">
+        <rect x="0" y="0" width="@Preset.CardWidth" height="@Preset.CardHeight" class="card" />
+        <rect x="@PreviewGeometry.WorkingArea.X" y="@PreviewGeometry.WorkingArea.Y" width="@PreviewGeometry.WorkingArea.Width" height="@PreviewGeometry.WorkingArea.Height" class="working-area" />
+        @if (Workspace.Placement is not null)
+        {
+            @foreach (var contour in PreviewGeometry.OpeningContours)
+            {
+                <polygon class="artwork" points="@Points(contour.Points)" fill-rule="@(contour.FillRule == StencilFillRule.EvenOdd ? "evenodd" : "nonzero")" />
+            }
+            @if (PreviewGeometry.Caption is not null)
+            {
+                @foreach (var contour in PreviewGeometry.Caption.Contours)
+                {
+                    <polygon class="caption" points="@Points(contour.Points)" />
+                }
+            }
+        }
+    </svg>
+    <div class="upload-controls">
+        <label for="svg-upload">SVG artwork</label>
+        <InputFile id="svg-upload" accept="image/svg+xml,.svg" OnChange="ImportSvgAsync" />
+        @if (Workspace.ImportedArtwork is not null)
+        {
+            <p class="valid" role="status">Imported @Workspace.ImportedArtwork.SourceFileName. Caption default: @Workspace.CaptionDefault</p>
+        }
+        @if (Workspace.ImportError is not null)
+        {
+            <p class="invalid" role="alert">@Workspace.ImportError</p>
+        }
+    </div>
+    @if (Workspace.ImportedArtwork is not null)
+    {
+        <fieldset class="caption-controls">
+            <legend>Embossed caption</legend>
+            <label>Caption <input @bind="CaptionText" @bind:after="ApplyCaption" /></label>
+            <label>Font
+                <select @bind="CaptionFont" @bind:after="ApplyCaptionFont">
+                    @foreach (var font in Enum.GetValues<CaptionFont>())
+                    {
+                        <option value="@font">@font</option>
+                    }
+                </select>
+            </label>
+        </fieldset>
+    }
+    @if (Workspace.Placement is not null)
+    {
+        <fieldset class="placement-controls">
+            <legend>Artwork placement</legend>
+            <label>Scale <input type="number" min="0.1" step="1" @bind="ScalePercent" @bind:after="ApplyPlacement" /> %</label>
+            <label>X offset <input type="number" step="0.1" @bind="OffsetX" @bind:after="ApplyPlacement" /> mm</label>
+            <label>Y offset <input type="number" step="0.1" @bind="OffsetY" @bind:after="ApplyPlacement" /> mm</label>
+            <label><input type="checkbox" @bind="InvertStencil" /> Invert stencil</label>
+            <button type="button" @onclick="ResetPlacement">Reset placement</button>
+            @if (Workspace.Placement.ValidationMessage is not null)
+            {
+                <p class="invalid" role="alert">@Workspace.Placement.ValidationMessage</p>
+            }
+        </fieldset>
+    }
+    <dl>
+        <dt>Card</dt><dd>@Preset.CardWidth × @Preset.CardHeight mm</dd>
+        <dt>Working area</dt><dd>@PreviewGeometry.WorkingArea.X, @PreviewGeometry.WorkingArea.Y · @PreviewGeometry.WorkingArea.Width × @PreviewGeometry.WorkingArea.Height mm</dd>
+        <dt>Mesh validation</dt><dd class="@(Validation.IsValid ? "valid" : "invalid")">@(Validation.IsValid ? "Valid and ready for export" : Validation.Message)</dd>
+    </dl>
+</section>
+
+@code {
+    private static readonly StencilPreset Preset = StencilPreset.ReferenceDonut;
+    private SvgUploadWorkspace Workspace = default!;
+    private double ScalePercent = 100;
+    private double OffsetX;
+    private double OffsetY;
+    private bool InvertStencil;
+    private string CaptionText = string.Empty;
+    private CaptionFont CaptionFont;
+
+    private CardGeometry PreviewGeometry => CardGeometry.Create(Preset, Workspace.Placement?.ToStencilArtwork(InvertStencil) ?? StencilArtwork.Empty, Workspace.CreateCaptionGeometry());
+    private MeshValidationResult Validation => MeshValidator.Validate(CardMeshGenerator.Generate(PreviewGeometry));
+
+    protected override void OnInitialized() => Workspace = new SvgUploadWorkspace(SvgImporter, CaptionFontOutlines, Preset);
+
+    private async Task ImportSvgAsync(InputFileChangeEventArgs args)
+    {
+        try
+        {
+            using var stream = args.File.OpenReadStream(SvgImportAdapter.MaximumFileBytes);
+            using var content = new MemoryStream();
+            await stream.CopyToAsync(content);
+            if (Workspace.TryImport(args.File.Name, content.ToArray()))
+            {
+                SyncPlacementControls();
+                CaptionText = Workspace.Caption.Text;
+                CaptionFont = Workspace.Caption.Font;
+            }
+        }
+        catch (IOException)
+        {
+            Workspace.TryImport(args.File.Name, new byte[SvgImportAdapter.MaximumFileBytes + 1]);
+        }
+    }
+
+    private void ApplyPlacement() => Workspace.AdjustPlacement(ScalePercent, OffsetX, OffsetY);
+
+    private void ResetPlacement()
+    {
+        Workspace.ResetPlacement();
+        SyncPlacementControls();
+    }
+
+    private void ApplyCaption() => Workspace.SetCaption(CaptionText);
+
+    private void ApplyCaptionFont() => Workspace.SetCaptionFont(CaptionFont);
+
+    private void SyncPlacementControls()
+    {
+        ScalePercent = Workspace.Placement!.ScalePercent;
+        OffsetX = Workspace.Placement.OffsetX;
+        OffsetY = Workspace.Placement.OffsetY;
+    }
+
+    private static string Points(IReadOnlyList<PointMm> points) => string.Join(" ", points.Select(point => FormattableString.Invariant($"{point.X},{point.Y}")));
+}
