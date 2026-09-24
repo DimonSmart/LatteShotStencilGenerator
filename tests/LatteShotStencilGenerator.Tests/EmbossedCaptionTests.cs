@@ -64,6 +64,19 @@ public sealed class EmbossedCaptionTests
     }
 
     [Fact]
+    public void Bundled_font_unions_overlapping_strokes_per_glyph()
+    {
+        var outline = Fonts.GetOutlines("E", CaptionFont.Block);
+
+        Assert.Equal(3, outline.Contours.Count);
+        Assert.All(outline.Contours, contour =>
+        {
+            Assert.True(contour.Points.Count >= 4);
+            Assert.Equal(contour.Points[0], contour.Points[^1]);
+        });
+    }
+
+    [Fact]
     public void Caption_mesh_reaches_expected_raised_z_level()
     {
         var caption = Assert.IsType<EmbossedCaption>(EmbossedCaption.Create(Preset, new CaptionSettings("DONUT", CaptionFont.Block), Fonts));
