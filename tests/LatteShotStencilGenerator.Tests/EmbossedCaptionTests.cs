@@ -81,6 +81,11 @@ public sealed class EmbossedCaptionTests
         var mesh = CardMeshGenerator.Generate(CardGeometry.Create(preset, StencilArtwork.Empty, caption));
 
         var validation = MeshValidator.Validate(mesh);
+        if (!validation.IsValid)
+        {
+            foreach (var edge in FindInvalidEdges(mesh))
+                Console.WriteLine(edge);
+        }
         Assert.True(validation.IsValid, validation.Message);
 
         var bytes = BinaryStlSerializer.Serialize(mesh);
@@ -101,6 +106,33 @@ public sealed class EmbossedCaptionTests
 
         var validation = MeshValidator.Validate(mesh);
         Assert.True(validation.IsValid, validation.Message);
+    }
+
+    private static IEnumerable<string> FindInvalidEdges(Mesh mesh)
+    {
+        var edges = new Dictionary<(string First, string Second), (int Count, int Direction)>();
+        foreach (var triangle in mesh.Triangles)
+        {
+            Add(triangle.A, triangle.B);
+            Add(triangle.B, triangle.C);
+            Add(triangle.C, triangle.A);
+        }
+
+        return edges
+            .Where(pair => pair.Value.Count != 2 || pair.Value.Direction != 0)
+            .Select(pair => $"{pair.Key.First} -> {pair.Key.Second}: count={pair.Value.Count}, direction={pair.Value.Direction}");
+
+        void Add(System.Numerics.Vector3 start, System.Numerics.Vector3 end)
+        {
+            var first = $"{start.X:R},{start.Y:R},{start.Z:R}";
+            var second = $"{end.X:R},{end.Y:R},{end.Z:R}";
+            var forwards = string.CompareOrdinal(first, second) <= 0;
+            var key = forwards ? (first, second) : (second, first);
+            var direction = forwards ? 1 : -1;
+            edges[key] = edges.TryGetValue(key, out var value)
+                ? (value.Count + 1, value.Direction + direction)
+                : (1, direction);
+        }
     }
 
     private static StencilContour Contour(
