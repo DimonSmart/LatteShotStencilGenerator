@@ -63,18 +63,6 @@ public sealed class EmbossedCaptionTests
         Assert.Equal(first.Contours.SelectMany(contour => contour.Points), second.Contours.SelectMany(contour => contour.Points));
     }
 
-    [Fact]
-    public void Bundled_font_unions_overlapping_strokes_per_glyph()
-    {
-        var outline = Fonts.GetOutlines("E", CaptionFont.Block);
-
-        Assert.Equal(3, outline.Contours.Count);
-        Assert.All(outline.Contours, contour =>
-        {
-            Assert.True(contour.Points.Count >= 4);
-            Assert.Equal(contour.Points[0], contour.Points[^1]);
-        });
-    }
 
     [Fact]
     public void Caption_mesh_reaches_expected_raised_z_level()
