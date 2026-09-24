@@ -4,3 +4,4 @@
 - Added a replaceable, safe C# SVG-import adapter that produces normalized closed contours, handles the specified filled subset and transforms, rejects unsafe or unsupported input, identifies stroke-only artwork, and has 14 passing focused tests.
 - Added local SVG upload state, deterministic centred-contain artwork placement with adjustments/reset/bounds feedback, and a shared-geometry 2D preview; focused checks now pass 19 tests.
 - Connected placed SVG contours to library-independent preview and watertight through-opening mesh geometry, preserving fill rules and inversion while blocking export for invalid artwork; focused checks now pass 23 tests.
+- Completed embossed caption mesh generation with per-glyph contour normalization, full upper-cell cutout tessellation, T-junction normalization, stitched relief walls, watertight/manifold validation for non-empty and nested captions, and successful binary STL serialization; the focused suite passes 30 tests.
