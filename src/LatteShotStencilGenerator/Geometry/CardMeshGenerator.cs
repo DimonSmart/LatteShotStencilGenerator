@@ -18,6 +18,7 @@ public static class CardMeshGenerator
         var x = new[] { 0f, (float)w.X, (float)w.Right, (float)p.CardWidth };
         var y = new[] { 0f, (float)w.Y, (float)w.Bottom, (float)p.CardHeight };
         var triangles = new List<Triangle>();
+        IReadOnlyList<BoundaryEdge> captionBaseBoundary = [];
 
         for (var row = 0; row < 3; row++)
         for (var column = 0; column < 3; column++)
@@ -33,7 +34,7 @@ public static class CardMeshGenerator
             if (row == 1 && column == 1) continue;
             if (row == 0 && column == 1 && geometry.Caption is not null)
             {
-                AddCaptionAreaTop(
+                captionBaseBoundary = AddCaptionAreaTop(
                     triangles,
                     new RectMm(x[column], y[row], x[column + 1] - x[column], y[row + 1] - y[row]),
                     geometry.Caption,
@@ -46,7 +47,9 @@ public static class CardMeshGenerator
         }
 
         AddWorkingArea(triangles, geometry, z0, low);
-        AddCaption(triangles, geometry.Caption, high);
+        var captionTopBoundary = AddCaption(triangles, geometry.Caption);
+        if (geometry.Caption is not null)
+            AddCaptionWalls(triangles, captionBaseBoundary, captionTopBoundary);
 
         // Outer walls are segmented to share the same topology as the top surface.
         for (var i = 0; i < 3; i++)
@@ -66,9 +69,9 @@ public static class CardMeshGenerator
         return new Mesh(triangles);
     }
 
-    private static void AddCaption(ICollection<Triangle> triangles, EmbossedCaption? caption, float baseZ)
+    private static IReadOnlyList<BoundaryEdge> AddCaption(ICollection<Triangle> triangles, EmbossedCaption? caption)
     {
-        if (caption is null) return;
+        if (caption is null) return [];
 
         var tess = new Tess();
         AddCaptionContours(tess, caption, reverse: false);
@@ -81,18 +84,167 @@ public static class CardMeshGenerator
             AddBoundary(boundary, triangle.C, triangle.A);
         }
 
-        foreach (var edge in boundary.Values.Where(edge => edge.Count == 1))
-            AddQuad(triangles, edge.End, edge.Start, ToZ(edge.Start, baseZ), ToZ(edge.End, baseZ));
+        return boundary.Values
+            .Where(edge => edge.Count == 1)
+            .Select(edge => new BoundaryEdge(edge.Start, edge.End))
+            .ToArray();
     }
 
-    private static void AddCaptionAreaTop(ICollection<Triangle> triangles, RectMm topArea, EmbossedCaption caption, float z)
+    private static IReadOnlyList<BoundaryEdge> AddCaptionAreaTop(ICollection<Triangle> triangles, RectMm topArea, EmbossedCaption caption, float z)
     {
         var tess = new Tess();
         tess.AddContour(ToVertices(Rectangle(topArea)));
         AddCaptionContours(tess, caption, reverse: true);
+        var boundary = new Dictionary<(string First, string Second), (Vector3 Start, Vector3 End, int Count)>();
         foreach (var triangle in TessellateTop(tess, z))
+        {
             triangles.Add(triangle);
+            AddBoundary(boundary, triangle.A, triangle.B);
+            AddBoundary(boundary, triangle.B, triangle.C);
+            AddBoundary(boundary, triangle.C, triangle.A);
+        }
+
+        return boundary.Values
+            .Where(edge => edge.Count == 1 && !IsRectangleEdge(edge.Start, edge.End, topArea))
+            .Select(edge => new BoundaryEdge(edge.Start, edge.End))
+            .ToArray();
     }
+
+    private static void AddCaptionWalls(
+        ICollection<Triangle> triangles,
+        IReadOnlyList<BoundaryEdge> baseBoundary,
+        IReadOnlyList<BoundaryEdge> topBoundary)
+    {
+        var baseLoops = BuildBoundaryLoops(baseBoundary.Select(edge => new BoundaryEdge(edge.End, edge.Start)));
+        var topLoops = BuildBoundaryLoops(topBoundary);
+        var baseByBounds = baseLoops.ToDictionary(LoopBoundsKey);
+
+        foreach (var topLoop in topLoops)
+        {
+            if (!baseByBounds.TryGetValue(LoopBoundsKey(topLoop), out var baseLoop))
+                throw new InvalidOperationException("Caption top and base boundaries do not describe the same contours.");
+
+            if (MathF.Sign(LoopArea(topLoop)) != MathF.Sign(LoopArea(baseLoop)))
+                baseLoop.Reverse();
+
+            var common = topLoop
+                .Select((point, index) => (Key: PointKey(point), Index: index))
+                .FirstOrDefault(candidate => baseLoop.Any(point => PointKey(point) == candidate.Key));
+
+            if (common.Key is null)
+                throw new InvalidOperationException("Caption boundary loops have no common vertex.");
+
+            RotateTo(topLoop, common.Index);
+            RotateTo(baseLoop, baseLoop.FindIndex(point => PointKey(point) == common.Key));
+            AddWallStrip(triangles, topLoop, baseLoop);
+        }
+    }
+
+    private static List<List<Vector3>> BuildBoundaryLoops(IEnumerable<BoundaryEdge> edges)
+    {
+        var remaining = edges.ToDictionary(edge => PointKey(edge.Start));
+        var loops = new List<List<Vector3>>();
+
+        while (remaining.Count > 0)
+        {
+            var first = remaining.First().Value;
+            var loop = new List<Vector3> { first.Start };
+            var current = first;
+
+            while (true)
+            {
+                remaining.Remove(PointKey(current.Start));
+                loop.Add(current.End);
+                if (PointKey(current.End) == PointKey(first.Start)) break;
+                if (!remaining.TryGetValue(PointKey(current.End), out current))
+                    throw new InvalidOperationException("Caption boundary is not a closed loop.");
+            }
+
+            loop.RemoveAt(loop.Count - 1);
+            loops.Add(loop);
+        }
+
+        return loops;
+    }
+
+    private static void AddWallStrip(ICollection<Triangle> triangles, IReadOnlyList<Vector3> top, IReadOnlyList<Vector3> bottom)
+    {
+        var topDistances = LoopDistances(top);
+        var bottomDistances = LoopDistances(bottom);
+        if (MathF.Abs(topDistances[^1] - bottomDistances[^1]) > 0.001f)
+            throw new InvalidOperationException("Caption top and base boundary lengths differ.");
+
+        var ti = 0;
+        var bi = 0;
+        while (ti < top.Count || bi < bottom.Count)
+        {
+            var topNext = topDistances[ti + 1];
+            var bottomNext = bottomDistances[bi + 1];
+
+            if (SameDistance(topNext, bottomNext))
+            {
+                AddQuad(
+                    triangles,
+                    top[(ti + 1) % top.Count],
+                    top[ti % top.Count],
+                    bottom[bi % bottom.Count],
+                    bottom[(bi + 1) % bottom.Count]);
+                ti++;
+                bi++;
+            }
+            else if (topNext < bottomNext)
+            {
+                triangles.Add(new Triangle(
+                    top[(ti + 1) % top.Count],
+                    top[ti % top.Count],
+                    bottom[bi % bottom.Count]));
+                ti++;
+            }
+            else
+            {
+                triangles.Add(new Triangle(
+                    top[ti % top.Count],
+                    bottom[bi % bottom.Count],
+                    bottom[(bi + 1) % bottom.Count]));
+                bi++;
+            }
+        }
+    }
+
+    private static float[] LoopDistances(IReadOnlyList<Vector3> loop)
+    {
+        var distances = new float[loop.Count + 1];
+        for (var i = 0; i < loop.Count; i++)
+        {
+            var next = loop[(i + 1) % loop.Count];
+            distances[i + 1] = distances[i] + Vector2.Distance(
+                new Vector2(loop[i].X, loop[i].Y),
+                new Vector2(next.X, next.Y));
+        }
+        return distances;
+    }
+
+    private static float LoopArea(IReadOnlyList<Vector3> loop) =>
+        loop.Select((point, index) =>
+        {
+            var next = loop[(index + 1) % loop.Count];
+            return point.X * next.Y - next.X * point.Y;
+        }).Sum() / 2f;
+
+    private static string LoopBoundsKey(IReadOnlyList<Vector3> loop) =>
+        $"{loop.Min(point => point.X):R},{loop.Min(point => point.Y):R},{loop.Max(point => point.X):R},{loop.Max(point => point.Y):R}";
+
+    private static void RotateTo<T>(List<T> items, int index)
+    {
+        if (index <= 0) return;
+        var prefix = items.Take(index).ToArray();
+        items.RemoveRange(0, index);
+        items.AddRange(prefix);
+    }
+
+    private static bool SameDistance(float first, float second) => MathF.Abs(first - second) <= 0.0001f;
+    private static string PointKey(Vector3 point) => $"{point.X:R},{point.Y:R}";
+
 
     private static void AddCaptionContours(Tess tess, EmbossedCaption caption, bool reverse)
     {
@@ -200,6 +352,14 @@ public static class CardMeshGenerator
         var key = string.CompareOrdinal(startKey, endKey) < 0 ? (startKey, endKey) : (endKey, startKey);
         edges[key] = edges.TryGetValue(key, out var edge) ? (edge.Start, edge.End, edge.Count + 1) : (start, end, 1);
     }
+
+    private readonly record struct BoundaryEdge(Vector3 Start, Vector3 End);
+
+    private static bool IsRectangleEdge(Vector3 start, Vector3 end, RectMm area) =>
+        (Same(start.X, area.X) && Same(end.X, area.X)) ||
+        (Same(start.X, area.Right) && Same(end.X, area.Right)) ||
+        (Same(start.Y, area.Y) && Same(end.Y, area.Y)) ||
+        (Same(start.Y, area.Bottom) && Same(end.Y, area.Bottom));
 
     private static bool IsWorkingAreaEdge((Vector3 Start, Vector3 End, int Count) edge, RectMm area) =>
         (Same(edge.Start.X, area.X) && Same(edge.End.X, area.X)) ||
