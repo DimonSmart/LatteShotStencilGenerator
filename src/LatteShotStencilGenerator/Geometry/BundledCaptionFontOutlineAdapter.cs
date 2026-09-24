@@ -46,9 +46,9 @@ public sealed class BundledCaptionFontOutlineAdapter : ICaptionFontOutlineAdapte
                 .ToArray());
         }
 
-        // The seven-segment glyph is assembled from rectangular strokes that overlap at joins.
-        // Convert that filled arrangement into its actual non-overlapping boundaries before the
-        // caption is scaled and passed to the mesh generator.
+        // Normalize every glyph into non-overlapping boundary contours before it is
+        // scaled and passed to the mesh generator. This also handles touching or
+        // overlapping strokes if the bundled glyph definitions evolve.
         tess.Tessellate(WindingRule.NonZero, ElementType.BoundaryContours, 3);
 
         var result = new List<StencilContour>(tess.ElementCount);
