@@ -28,9 +28,18 @@ public static class MeshValidator
             AddEdge(edges, triangle.C, triangle.A);
         }
 
-        return edges.Values.All(edge => edge.Count == 2 && edge.Direction == 0)
-            ? MeshValidationResult.Valid
-            : new(false, "Mesh has open, non-manifold, or inconsistently wound edges.");
+        var invalidEdges = edges
+            .Where(edge => edge.Value.Count != 2 || edge.Value.Direction != 0)
+            .ToArray();
+        if (invalidEdges.Length == 0)
+            return MeshValidationResult.Valid;
+
+        var openOrNonManifold = invalidEdges.Count(edge => edge.Value.Count != 2);
+        var inconsistentWinding = invalidEdges.Count(edge => edge.Value.Count == 2 && edge.Value.Direction != 0);
+        var samples = string.Join("; ", invalidEdges.Take(4).Select(edge =>
+            $"{edge.Key.First} -> {edge.Key.Second} (count={edge.Value.Count}, direction={edge.Value.Direction})"));
+        return new(false,
+            $"Mesh has {invalidEdges.Length:N0} invalid edge(s): {openOrNonManifold:N0} open/non-manifold and {inconsistentWinding:N0} inconsistently wound. Sample: {samples}");
     }
 
     private static bool IsFinite(Vector3 point) => float.IsFinite(point.X) && float.IsFinite(point.Y) && float.IsFinite(point.Z);
