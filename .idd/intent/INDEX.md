@@ -33,5 +33,5 @@ opened.
 | IDD-0003 | Spec | SVG artwork | Safe SVG subset, interpretation, placement, and limits | — |
 | IDD-0004 | Spec | Caption | Embossed caption and bundled-font behavior | — |
 | IDD-0005 | Spec | Stencil topology | Islands, automatic bridges, and manufacturing warnings | — |
-| IDD-0006 | Spec | Preview and export | Shared preview geometry, mesh validation, and binary STL | — |
+| IDD-0006 | Spec | Preview and export | 2D geometry preview, export-only mesh validation, and binary STL | — |
 | IDD-0007 | Spec | Operability | Responsiveness, deterministic behavior, and deployment quality | — |

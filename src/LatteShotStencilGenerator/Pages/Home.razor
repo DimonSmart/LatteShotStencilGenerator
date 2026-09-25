@@ -2,7 +2,6 @@
 @inject ISvgImportAdapter SvgImporter
 @inject ICaptionFontOutlineAdapter CaptionFontOutlines
 @inject IJSRuntime JavaScript
-@implements IAsyncDisposable
 
 <PageTitle>Latte Card Generator</PageTitle>
 
@@ -76,25 +75,10 @@
         }
     </svg>
     }
-    <section class="mesh-preview-section" aria-labelledby="mesh-preview-heading">
-        <div class="mesh-preview-heading">
-            <h2 id="mesh-preview-heading">3D preview</h2>
-            <button type="button" disabled="@(PreviewMesh is null || Processing.IsBusy)" @onclick="ResetPreviewCameraAsync">Reset camera</button>
-        </div>
-        <div class="mesh-preview-frame">
-            <canvas @ref="MeshPreviewCanvas" class="mesh-preview" tabindex="0"
-                    aria-label="Interactive 3D preview of the generated stencil mesh"></canvas>
-            @if (PreviewMesh is null)
-            {
-                <p class="mesh-preview-placeholder" role="status">@PreviewPlaceholder</p>
-            }
-        </div>
-        <small>Drag to rotate · Shift-drag to pan · Scroll to zoom · Preview capped at @(PreviewMeshBuilder.DefaultMaximumTriangles.ToString("N0")) triangles; STL export always uses full geometry.</small>
-        @if (PreviewInteractionError is not null)
-        {
-            <p class="invalid" role="alert">@PreviewInteractionError</p>
-        }
-    </section>
+    @if (GeometryError is not null)
+    {
+        <p class="invalid" role="alert">@GeometryError</p>
+    }
     <div class="upload-controls">
         <label for="svg-upload">SVG artwork</label>
         <InputFile id="svg-upload" accept="image/svg+xml,.svg" OnChange="ImportSvgAsync" disabled="@Processing.IsBusy" />
@@ -204,62 +188,30 @@
     private BridgeMode SelectedBridgeMode = StencilPreset.ReferenceDonut.BridgeConfiguration.Mode;
     private double BridgeWidthMm = StencilPreset.ReferenceDonut.BridgeConfiguration.BridgeWidthMm;
     private CardGeometry? CurrentGeometry;
-    private MeshPreviewModel? PreviewMesh;
-    private string? PreviewAvailabilityMessage;
-    private ElementReference MeshPreviewCanvas;
-    private IJSObjectReference? PreviewModule;
-    private IJSObjectReference? PreviewController;
-    private long PreviewRevision;
-    private long RenderedPreviewRevision = -1;
-    private string? PreviewInteractionError;
+    private string? GeometryError;
     private string? DownloadError;
     private bool IsDownloading;
     private readonly WorkspaceProcessingState Processing = new();
 
     private CardGeometry PreviewGeometry => CurrentGeometry!;
-    private bool IsReadyForExport => Configuration.IsValid && Workspace.ImportedArtwork is not null && Workspace.ImportError is null && CurrentGeometry?.IsExportable == true;
+    private bool IsReadyForExport => Configuration.IsValid
+        && Workspace.ImportedArtwork is not null
+        && Workspace.ImportError is null
+        && GeometryError is null
+        && CurrentGeometry?.IsExportable == true;
     private bool CanDownload => IsReadyForExport && !IsDownloading;
     private string ExportStatus => Configuration.ValidationErrors.FirstOrDefault()
         ?? Workspace.ImportError
+        ?? GeometryError
         ?? CurrentGeometry?.ValidationMessage
         ?? (Workspace.ImportedArtwork is null
             ? "Import SVG artwork to prepare an STL."
             : "Geometry ready. The full STL mesh will be built and validated before download.");
-    private string PreviewPlaceholder => !Configuration.IsValid
-        ? "Fix the card settings to create a preview."
-        : Workspace.ImportError is not null
-        ? "The selected artwork is invalid. Import a valid SVG to create a 3D preview."
-        : Workspace.ImportedArtwork is null
-            ? "Import SVG artwork to create a 3D preview."
-            : PreviewAvailabilityMessage ?? "The current settings do not produce a valid preview mesh.";
 
     protected override void OnInitialized()
     {
         Workspace = new SvgUploadWorkspace(SvgImporter, CaptionFontOutlines, Preset);
         InitializeGeometryState();
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        try
-        {
-            PreviewModule ??= await JavaScript.InvokeAsync<IJSObjectReference>("import", "./js/mesh-preview.js");
-            PreviewController ??= await PreviewModule.InvokeAsync<IJSObjectReference>("createMeshPreview", MeshPreviewCanvas);
-            if (RenderedPreviewRevision != PreviewRevision)
-            {
-                await PreviewController.InvokeVoidAsync("update", PreviewMesh);
-                RenderedPreviewRevision = PreviewRevision;
-            }
-        }
-        catch (JSException exception)
-        {
-            var message = $"The 3D preview could not be displayed: {exception.Message}";
-            if (PreviewInteractionError != message)
-            {
-                PreviewInteractionError = message;
-                await InvokeAsync(StateHasChanged);
-            }
-        }
     }
 
     private Task ImportSvgAsync(InputFileChangeEventArgs args) => RunProcessingAsync("Importing SVG artwork…", async () =>
@@ -330,25 +282,21 @@
 
     private void InitializeGeometryState()
     {
-        PreviewMesh = null;
-        PreviewAvailabilityMessage = null;
+        GeometryError = null;
         DownloadError = null;
         CurrentGeometry = Configuration.IsValid
             ? CardGeometry.Create(Preset, StencilArtwork.Empty, Workspace.BridgeConfiguration, Workspace.CreateCaptionGeometry())
             : null;
-        PreviewRevision++;
     }
 
     private async Task RefreshGeometryCoreAsync()
     {
-        PreviewMesh = null;
-        PreviewAvailabilityMessage = null;
+        GeometryError = null;
         DownloadError = null;
 
         if (!Configuration.IsValid)
         {
             CurrentGeometry = null;
-            PreviewRevision++;
             return;
         }
 
@@ -360,29 +308,13 @@
                 Workspace.Placement?.ToStencilArtwork(InvertStencil, Preset.GenerationResolutionMm, Preset.MaximumFlattenedSvgSegments) ?? StencilArtwork.Empty,
                 Workspace.BridgeConfiguration,
                 Workspace.CreateCaptionGeometry());
-
-            if (Workspace.ImportedArtwork is not null && Workspace.ImportError is null && CurrentGeometry.IsExportable)
-            {
-                await SetProcessingStageAsync("Preparing 3D preview…");
-                var preview = PreviewMeshBuilder.Build(CurrentGeometry);
-                PreviewMesh = preview.Model;
-                PreviewAvailabilityMessage = preview.Message;
-            }
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             CurrentGeometry = null;
-            PreviewAvailabilityMessage =
+            GeometryError =
                 $"Geometry preparation failed: {exception.Message} Adjust the artwork placement, caption, bridges, or generation resolution.";
         }
-
-        PreviewRevision++;
-    }
-
-    private async Task ResetPreviewCameraAsync()
-    {
-        if (PreviewController is not null && PreviewMesh is not null)
-            await PreviewController.InvokeVoidAsync("resetCamera");
     }
 
     private Task DownloadStlAsync() => RunProcessingAsync("Building full STL mesh…", async () =>
@@ -519,14 +451,4 @@
     private static string Path(IReadOnlyList<PlanarPolygon> regions) => string.Join(" ", regions.SelectMany(region =>
         new[] { region.Outer }.Concat(region.Holes).Select(points => $"M {Points(points)} Z")));
 
-    public async ValueTask DisposeAsync()
-    {
-        if (PreviewController is not null)
-        {
-            try { await PreviewController.InvokeVoidAsync("dispose"); }
-            catch (JSDisconnectedException) { }
-            await PreviewController.DisposeAsync();
-        }
-        if (PreviewModule is not null) await PreviewModule.DisposeAsync();
-    }
 }

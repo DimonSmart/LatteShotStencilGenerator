@@ -10,7 +10,7 @@ public sealed record StlExportResult(string? FileName, byte[]? Content, string? 
     public static StlExportResult Failure(string error) => new(null, null, error);
 }
 
-/// <summary>Creates a validated browser-download payload from the current preview geometry.</summary>
+/// <summary>Creates a validated STL payload from the current card geometry.</summary>
 public static class StlExportGenerator
 {
     public static StlExportResult Generate(CardGeometry geometry, string? sourceFileName, string? caption)

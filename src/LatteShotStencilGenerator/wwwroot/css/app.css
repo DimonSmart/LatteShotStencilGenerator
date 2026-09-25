@@ -3,14 +3,6 @@ main { max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
 .workspace { display: grid; gap: 1rem; }
 .workspace h1, .workspace p { margin: 0; }
 .card-preview { width: min(100%, 480px); border-radius: 8px; box-shadow: 0 2px 10px #0002; background: #ddc0a0; }
-.mesh-preview-section { display: grid; gap: .5rem; width: min(100%, 640px); }
-.mesh-preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-.mesh-preview-heading h2 { margin: 0; font-size: 1.15rem; }
-.mesh-preview-frame { position: relative; min-height: 300px; border: 1px solid #b89a7d; border-radius: 8px; overflow: hidden; background: radial-gradient(circle at 50% 38%, #fff 0, #f4e8da 70%, #e2cfbb 100%); }
-.mesh-preview { display: block; width: 100%; height: 300px; cursor: grab; touch-action: none; }
-.mesh-preview:active { cursor: grabbing; }
-.mesh-preview:focus-visible { outline: 3px solid #276ba3; outline-offset: -3px; }
-.mesh-preview-placeholder { position: absolute; inset: 0; display: grid; place-items: center; padding: 2rem; text-align: center; color: #6c5847; pointer-events: none; }
 .card { fill: #d4a574; stroke: #563d2b; stroke-width: .45px; }
 .working-area { fill: #faedda; stroke: #563d2b; stroke-width: .45px; stroke-dasharray: 1.5 1.5; }
 .artwork { fill: #563d2b; stroke: none; }

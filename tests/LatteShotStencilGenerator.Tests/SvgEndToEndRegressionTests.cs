@@ -52,22 +52,37 @@ public sealed class SvgEndToEndRegressionTests
     }
 
     [Fact]
-    public void Gat4_inkscape_example_generates_a_valid_deterministic_mesh()
+    public void Gat4_creates_exportable_card_geometry_without_mesh_generation()
     {
         var imported = ImportFixture("gat4.svg");
         var placement = SvgArtworkPlacement.Fit(imported, Preset.WorkingArea, Preset.ArtworkPadding);
         var artwork = placement.ToStencilArtwork(false, Preset.GenerationResolutionMm, Preset.MaximumFlattenedSvgSegments);
-        var first = CardGeometry.Create(Preset, artwork, Preset.BridgeConfiguration);
-        var second = CardGeometry.Create(Preset, artwork, Preset.BridgeConfiguration);
-        var mesh = CardMeshGenerator.Generate(first);
+        var geometry = CardGeometry.Create(Preset, artwork, Preset.BridgeConfiguration);
 
         Assert.True(placement.IsWithinWorkingArea);
         Assert.Single(artwork.Contours);
-        Assert.True(first.IsExportable, first.ValidationMessage);
-        Assert.Equal(0, first.ResolvedTopology.DetachedComponentCount);
-        Assert.True(MeshValidator.Validate(mesh).IsValid, MeshValidator.Validate(mesh).Message);
-        Assert.Equal(first.ResolvedTopology.OpeningRegions.Select(RegionKey), second.ResolvedTopology.OpeningRegions.Select(RegionKey));
-        Assert.Equal(mesh.Triangles, CardMeshGenerator.Generate(second).Triangles);
+        Assert.True(geometry.IsExportable, geometry.ValidationMessage);
+        Assert.NotEmpty(geometry.ResolvedTopology.OpeningRegions);
+        Assert.Equal(0, geometry.ResolvedTopology.DetachedComponentCount);
+    }
+
+    [Fact]
+    public void Gat4_inkscape_example_exports_a_valid_deterministic_binary_stl()
+    {
+        var imported = ImportFixture("gat4.svg");
+        var placement = SvgArtworkPlacement.Fit(imported, Preset.WorkingArea, Preset.ArtworkPadding);
+        var artwork = placement.ToStencilArtwork(false, Preset.GenerationResolutionMm, Preset.MaximumFlattenedSvgSegments);
+        var geometry = CardGeometry.Create(Preset, artwork, Preset.BridgeConfiguration);
+
+        var first = StlExportGenerator.Generate(geometry, "gat4.svg", string.Empty);
+        var second = StlExportGenerator.Generate(geometry, "gat4.svg", string.Empty);
+
+        Assert.True(first.IsSuccess, first.Error);
+        Assert.True(second.IsSuccess, second.Error);
+        Assert.Equal("gat4-card.stl", first.FileName);
+        Assert.NotNull(first.Content);
+        Assert.True(first.Content!.Length > 84);
+        Assert.Equal(first.Content, second.Content);
     }
 
     private static SvgImportResult ImportFixture(string fixtureName)

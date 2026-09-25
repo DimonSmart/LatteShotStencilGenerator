@@ -51,15 +51,15 @@ public sealed class GeometryLimitTests
     }
 
     [Fact]
-    public void Mesh_triangle_limit_blocks_preview_generation_and_stl_export()
+    public void Mesh_triangle_limit_blocks_stl_export()
     {
         var preset = StencilPreset.ReferenceDonut with { MaximumMeshTriangles = 1 };
         var geometry = CardGeometry.Create(preset);
 
-        var exception = Assert.ThrowsAny<InvalidOperationException>(() => CardMeshGenerator.Generate(geometry));
+        Assert.True(geometry.IsExportable, geometry.ValidationMessage);
+
         var export = StlExportGenerator.Generate(geometry, "art.svg", "ART");
 
-        Assert.Contains("triangle limit of 1", exception.Message);
         Assert.False(export.IsSuccess);
         Assert.Contains("triangle limit of 1", export.Error);
     }
