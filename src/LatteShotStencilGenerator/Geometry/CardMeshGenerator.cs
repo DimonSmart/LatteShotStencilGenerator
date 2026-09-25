@@ -121,7 +121,7 @@ public static class CardMeshGenerator
                      .Where(candidate => candidate != start && candidate != end)
                      .Select(candidate => (Point: candidate, T: Vector3.Dot(candidate - start, edge) / lengthSquared))
                      .Where(candidate => candidate.T > 0f && candidate.T < 1f &&
-                                         Vector3.Cross(edge, candidate.Point - start).Length() <= 0.00001f * MathF.Max(1f, edge.Length()))
+                                         Vector3.Cross(edge, candidate.Point - start).Length() <= 0.00001f * edge.Length())
                      .OrderBy(candidate => candidate.T))
         {
             yield return candidate.Point;
@@ -384,7 +384,7 @@ public static class CardMeshGenerator
     private static bool IsOnSegment(Vector3 start, Vector2 edge, Vector3 point)
     {
         var cross = edge.X * (point.Y - start.Y) - edge.Y * (point.X - start.X);
-        return MathF.Abs(cross) <= 0.00001f * MathF.Max(1f, edge.Length());
+        return MathF.Abs(cross) <= 0.00001f * edge.Length();
     }
 
     private static bool SamePoint(Vector3 first, Vector3 second) =>
