@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:cc="http://creativecommons.org/ns#"
+  xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+  xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+  xmlns:openclipart="https://openclipart.org/namespaces/openclipart"
+  width="64"
+  height="64"
+  viewBox="0 0 64 64"
+  sodipodi:docname="gat4.svg"
+  inkscape:version="1.2">
+  <sodipodi:namedview
+    id="namedview1"
+    pagecolor="#ffffff"
+    inkscape:zoom="1.5"
+    inkscape:cx="32"
+    inkscape:cy="32" />
+  <metadata>
+    <rdf:RDF>
+      <cc:Work rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:source>https://openclipart.org/</dc:source>
+        <openclipart:source>https://openclipart.org/detail/gat4</openclipart:source>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <path
+    id="path1"
+    inkscape:connector-curvature="0"
+    fill="#000000"
+    d="M 8,8 L 56,8 L 56,56 L 8,56 Z" />
+</svg>

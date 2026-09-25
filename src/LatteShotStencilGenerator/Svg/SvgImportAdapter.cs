@@ -30,6 +30,8 @@ public interface ISvgImportAdapter { SvgImportOutcome Import(string? sourceFileN
 public sealed class SvgImportAdapter : ISvgImportAdapter
 {
     public const int MaximumFileBytes = 5 * 1024 * 1024, MaximumSourceShapes = 5_000;
+    private const string SvgNamespace = "http://www.w3.org/2000/svg";
+    private const string SodipodiNamespace = "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd";
     private static readonly HashSet<string> ShapeNames = ["path", "rect", "circle", "ellipse", "polygon", "polyline"];
     private static readonly HashSet<string> AllowedNames = ["svg", "g", "path", "rect", "circle", "ellipse", "polygon", "polyline", "title", "desc"];
     public SvgImportOutcome Import(string? sourceFileName, ReadOnlyMemory<byte> content, int maximumFlattenedSegments)
@@ -43,7 +45,9 @@ public sealed class SvgImportAdapter : ISvgImportAdapter
         catch (Exception e) when (e is XmlException or InvalidOperationException) { return SvgImportOutcome.Failure("The file is not valid, safe SVG XML."); }
         var root = xml.Root;
         if (root is null || root.Name.LocalName != "svg") return SvgImportOutcome.Failure("The document must have an svg root element.");
+        RemoveNonRenderingMetadata(root);
         if (root.DescendantsAndSelf().Any(Unsafe)) return SvgImportOutcome.Failure("SVG external resources, scripts, entities, and URL references are not allowed.");
+        RemoveVendorAttributes(root);
         var unsupported = root.DescendantsAndSelf().FirstOrDefault(x => !AllowedNames.Contains(x.Name.LocalName));
         if (unsupported is not null) return SvgImportOutcome.Failure($"SVG element '{unsupported.Name.LocalName}' is not supported for stencil artwork.");
         if (root.Descendants().Count(x => ShapeNames.Contains(x.Name.LocalName)) > MaximumSourceShapes) return SvgImportOutcome.Failure("SVG artwork cannot contain more than 5,000 source shapes or paths.");
@@ -61,7 +65,46 @@ public sealed class SvgImportAdapter : ISvgImportAdapter
         catch (SvgFlattenLimitException exception) { return SvgImportOutcome.Failure(exception.Message); }
         catch (FormatException) { return SvgImportOutcome.Failure("The SVG contains malformed or unsupported geometry."); }
     }
-    private static bool Unsafe(XElement e) => e.Name.LocalName is "script" or "style" or "use" || e.Attributes().Any(a => a.Name.LocalName is "href" or "src" or "style" || a.Name.LocalName.StartsWith("on", StringComparison.OrdinalIgnoreCase) || a.Value.Contains("url(", StringComparison.OrdinalIgnoreCase) || a.Value.Contains("://", StringComparison.Ordinal));
+    private static void RemoveNonRenderingMetadata(XElement root)
+    {
+        foreach (var element in root.DescendantsAndSelf().Where(IsNonRenderingMetadata).ToArray())
+            element.Remove();
+    }
+
+    private static bool IsNonRenderingMetadata(XElement element)
+    {
+        var namespaceName = element.Name.NamespaceName;
+        return element.Name.LocalName == "metadata" && (namespaceName.Length == 0 || namespaceName == SvgNamespace)
+            || element.Name.LocalName == "namedview" && namespaceName == SodipodiNamespace;
+    }
+
+    private static void RemoveVendorAttributes(XElement root)
+    {
+        foreach (var attribute in root.DescendantsAndSelf().Attributes()
+                     .Where(a => !a.IsNamespaceDeclaration
+                         && a.Name.NamespaceName.Length != 0
+                         && a.Name.NamespaceName != XNamespace.Xml.NamespaceName)
+                     .ToArray())
+            attribute.Remove();
+    }
+
+    private static bool Unsafe(XElement element)
+    {
+        if (element.Name.LocalName is "script" or "style" or "use") return true;
+        return element.Attributes().Any(UnsafeAttribute);
+    }
+
+    private static bool UnsafeAttribute(XAttribute attribute)
+    {
+        if (attribute.IsNamespaceDeclaration) return false;
+
+        var name = attribute.Name.LocalName;
+        return name.Equals("href", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("src", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("style", StringComparison.OrdinalIgnoreCase)
+            || name.StartsWith("on", StringComparison.OrdinalIgnoreCase)
+            || attribute.Value.Contains("url(", StringComparison.OrdinalIgnoreCase);
+    }
     private static void Visit(SvgElement e, Affine parent, SvgFillRule inherited, List<VectorContour> output, ref bool strokeOnly)
     {
         var transform = parent * TransformOf(e.Transforms); var rule = e.FillRule == global::Svg.SvgFillRule.EvenOdd ? SvgFillRule.EvenOdd : inherited;

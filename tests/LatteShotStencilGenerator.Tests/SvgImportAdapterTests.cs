@@ -22,10 +22,26 @@ public sealed class SvgImportAdapterTests
         Assert.Equal(contour.Points[0], contour.Points[^1]);
     }
 
+    [Fact]
+    public void Imports_gat4_with_inkscape_openclipart_metadata_and_one_path()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "gat4.svg");
+        var outcome = _adapter.Import("gat4.svg", File.ReadAllBytes(path), StencilPreset.ReferenceDonut.MaximumFlattenedSvgSegments);
+
+        var result = Assert.IsType<SvgImportResult>(outcome.Value);
+        Assert.Equal("gat4.svg", result.SourceFileName);
+        Assert.Single(result.Artwork.Contours);
+        Assert.Single(result.Contours);
+    }
+
     [Theory]
     [InlineData("<svg><script/></svg>")]
     [InlineData("<svg onload='alert(1)'><rect width='1' height='1'/></svg>")]
     [InlineData("<svg><image href='https://example.test/a.png'/></svg>")]
+    [InlineData("<svg><path href='https://example.test/a.svg' d='M0 0 L10 0 L10 10 Z'/></svg>")]
+    [InlineData("<svg><path style='fill:black' d='M0 0 L10 0 L10 10 Z'/></svg>")]
+    [InlineData("<svg><path fill='url(https://example.test/fill.svg#paint)' d='M0 0 L10 0 L10 10 Z'/></svg>")]
+    [InlineData("<svg><use href='#shape'/></svg>")]
     [InlineData("<svg><text>no</text></svg>")]
     [InlineData("<svg><path d='M 0 0 L 1'/></svg>")]
     public void Rejects_unsafe_unsupported_or_malformed_svg(string svg)
