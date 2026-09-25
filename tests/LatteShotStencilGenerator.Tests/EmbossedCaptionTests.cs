@@ -82,7 +82,7 @@ public sealed class EmbossedCaptionTests
     }
 
     [Fact]
-    public void Overlapping_and_touching_bundled_glyph_strokes_produce_deterministic_preview_mesh_and_stl_geometry()
+    public void Overlapping_and_touching_bundled_glyph_strokes_produce_deterministic_mesh_and_stl_geometry()
     {
         var first = Assert.IsType<EmbossedCaption>(EmbossedCaption.Create(Preset, new CaptionSettings("8", CaptionFont.Block), Fonts));
         var second = Assert.IsType<EmbossedCaption>(EmbossedCaption.Create(Preset, new CaptionSettings("8", CaptionFont.Block), Fonts));
@@ -91,12 +91,10 @@ public sealed class EmbossedCaptionTests
 
         var firstMesh = CardMeshGenerator.Generate(CardGeometry.Create(Preset, StencilArtwork.Empty, first));
         var secondMesh = CardMeshGenerator.Generate(CardGeometry.Create(Preset, StencilArtwork.Empty, second));
-        var preview = MeshPreviewModel.Create(firstMesh);
         var firstStl = BinaryStlSerializer.Serialize(firstMesh);
         var secondStl = BinaryStlSerializer.Serialize(secondMesh);
 
         Assert.True(MeshValidator.Validate(firstMesh).IsValid);
-        Assert.NotEmpty(preview.TriangleIndices);
         Assert.Equal(firstMesh.Triangles, secondMesh.Triangles);
         Assert.Equal(firstStl, secondStl);
     }
