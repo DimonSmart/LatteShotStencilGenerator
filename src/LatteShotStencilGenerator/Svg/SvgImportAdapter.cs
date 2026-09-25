@@ -47,6 +47,7 @@ public sealed class SvgImportAdapter : ISvgImportAdapter
         if (root is null || root.Name.LocalName != "svg") return SvgImportOutcome.Failure("The document must have an svg root element.");
         RemoveNonRenderingMetadata(root);
         if (root.DescendantsAndSelf().Any(Unsafe)) return SvgImportOutcome.Failure("SVG external resources, scripts, entities, and URL references are not allowed.");
+        NormalizeInlineFillStyles(root);
         RemoveVendorAttributes(root);
         var unsupported = root.DescendantsAndSelf().FirstOrDefault(x => !AllowedNames.Contains(x.Name.LocalName));
         if (unsupported is not null) return SvgImportOutcome.Failure($"SVG element '{unsupported.Name.LocalName}' is not supported for stencil artwork.");
@@ -88,6 +89,23 @@ public sealed class SvgImportAdapter : ISvgImportAdapter
             attribute.Remove();
     }
 
+    private static void NormalizeInlineFillStyles(XElement root)
+    {
+        foreach (var attribute in root.DescendantsAndSelf().Attributes().Where(a => a.Name.LocalName.Equals("style", StringComparison.OrdinalIgnoreCase)).ToArray())
+        {
+            var declarations = attribute.Value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (declarations.Length != 1)
+                continue;
+
+            var parts = declarations[0].Split(':', 2, StringSplitOptions.TrimEntries);
+            if (parts.Length != 2 || !parts[0].Equals("fill", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(parts[1]))
+                continue;
+
+            attribute.Parent!.SetAttributeValue("fill", parts[1]);
+            attribute.Remove();
+        }
+    }
+
     private static bool Unsafe(XElement element)
     {
         if (element.Name.LocalName is "script" or "style" or "use") return true;
@@ -101,9 +119,17 @@ public sealed class SvgImportAdapter : ISvgImportAdapter
         var name = attribute.Name.LocalName;
         return name.Equals("href", StringComparison.OrdinalIgnoreCase)
             || name.Equals("src", StringComparison.OrdinalIgnoreCase)
-            || name.Equals("style", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("style", StringComparison.OrdinalIgnoreCase) && !IsSafeInlineFillStyle(attribute.Value)
             || name.StartsWith("on", StringComparison.OrdinalIgnoreCase)
             || attribute.Value.Contains("url(", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSafeInlineFillStyle(string value)
+    {
+        var declarations = value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (declarations.Length != 1) return false;
+        var parts = declarations[0].Split(':', 2, StringSplitOptions.TrimEntries);
+        return parts.Length == 2 && parts[0].Equals("fill", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(parts[1]);
     }
     private static void Visit(SvgElement e, Affine parent, SvgFillRule inherited, List<VectorContour> output, ref bool strokeOnly)
     {

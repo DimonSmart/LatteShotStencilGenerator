@@ -51,6 +51,25 @@ public sealed class SvgEndToEndRegressionTests
         Assert.Equal(mesh.Triangles, CardMeshGenerator.Generate(second).Triangles);
     }
 
+    [Fact]
+    public void Gat4_inkscape_example_generates_a_valid_deterministic_mesh()
+    {
+        var imported = ImportFixture("gat4.svg");
+        var placement = SvgArtworkPlacement.Fit(imported, Preset.WorkingArea, Preset.ArtworkPadding);
+        var artwork = placement.ToStencilArtwork(false, Preset.GenerationResolutionMm, Preset.MaximumFlattenedSvgSegments);
+        var first = CardGeometry.Create(Preset, artwork, Preset.BridgeConfiguration);
+        var second = CardGeometry.Create(Preset, artwork, Preset.BridgeConfiguration);
+        var mesh = CardMeshGenerator.Generate(first);
+
+        Assert.True(placement.IsWithinWorkingArea);
+        Assert.Single(artwork.Contours);
+        Assert.True(first.IsExportable, first.ValidationMessage);
+        Assert.Equal(0, first.ResolvedTopology.DetachedComponentCount);
+        Assert.True(MeshValidator.Validate(mesh).IsValid, MeshValidator.Validate(mesh).Message);
+        Assert.Equal(first.ResolvedTopology.OpeningRegions.Select(RegionKey), second.ResolvedTopology.OpeningRegions.Select(RegionKey));
+        Assert.Equal(mesh.Triangles, CardMeshGenerator.Generate(second).Triangles);
+    }
+
     private static SvgImportResult ImportFixture(string fixtureName)
     {
         var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", fixtureName);

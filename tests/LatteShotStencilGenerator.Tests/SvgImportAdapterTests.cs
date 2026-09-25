@@ -23,7 +23,7 @@ public sealed class SvgImportAdapterTests
     }
 
     [Fact]
-    public void Imports_gat4_with_inkscape_openclipart_metadata_and_one_path()
+    public void Imports_gat4_with_inkscape_metadata_inline_fill_style_and_one_path()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "gat4.svg");
         var outcome = _adapter.Import("gat4.svg", File.ReadAllBytes(path), StencilPreset.ReferenceDonut.MaximumFlattenedSvgSegments);
@@ -39,7 +39,8 @@ public sealed class SvgImportAdapterTests
     [InlineData("<svg onload='alert(1)'><rect width='1' height='1'/></svg>")]
     [InlineData("<svg><image href='https://example.test/a.png'/></svg>")]
     [InlineData("<svg><path href='https://example.test/a.svg' d='M0 0 L10 0 L10 10 Z'/></svg>")]
-    [InlineData("<svg><path style='fill:black' d='M0 0 L10 0 L10 10 Z'/></svg>")]
+    [InlineData("<svg><path style='stroke:black' d='M0 0 L10 0 L10 10 Z'/></svg>")]
+    [InlineData("<svg><path style='fill:black;stroke:none' d='M0 0 L10 0 L10 10 Z'/></svg>")]
     [InlineData("<svg><path fill='url(https://example.test/fill.svg#paint)' d='M0 0 L10 0 L10 10 Z'/></svg>")]
     [InlineData("<svg><use href='#shape'/></svg>")]
     [InlineData("<svg><text>no</text></svg>")]
