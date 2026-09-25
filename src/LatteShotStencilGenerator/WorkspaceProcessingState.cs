@@ -1,6 +1,5 @@
 namespace LatteShotStencilGenerator;
 
-/// <summary>Coordinates mutually exclusive, user-initiated workspace processing.</summary>
 public sealed class WorkspaceProcessingState
 {
     public bool IsBusy { get; private set; }
@@ -14,6 +13,15 @@ public sealed class WorkspaceProcessingState
         IsBusy = true;
         Message = message;
         return true;
+    }
+
+    public void UpdateMessage(string message)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+        if (!IsBusy)
+            throw new InvalidOperationException("Cannot update the processing stage when no operation is active.");
+
+        Message = message;
     }
 
     public void Complete()

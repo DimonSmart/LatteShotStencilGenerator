@@ -1,8 +1,11 @@
 export function createMeshPreview(canvas) {
     const context = canvas.getContext("2d");
     const camera = { yaw: -0.62, pitch: 0.92, zoom: 1, panX: 0, panY: 0 };
+    const facesPerFrame = 600;
     let model = null;
     let pointer = null;
+    let renderGeneration = 0;
+    let animationFrame = 0;
 
     function resetCamera() {
         camera.yaw = -0.62;
@@ -58,6 +61,12 @@ export function createMeshPreview(canvas) {
     }
 
     function render() {
+        const generation = ++renderGeneration;
+        if (animationFrame) {
+            cancelAnimationFrame(animationFrame);
+            animationFrame = 0;
+        }
+
         context.clearRect(0, 0, canvas.width, canvas.height);
         if (!model || !model.positions || model.positions.length === 0) return;
 
@@ -73,18 +82,30 @@ export function createMeshPreview(canvas) {
         faces.sort((first, second) => first.depth - second.depth);
 
         context.lineJoin = "round";
-        for (const face of faces) {
-            context.beginPath();
-            context.moveTo(face.a.x, face.a.y);
-            context.lineTo(face.b.x, face.b.y);
-            context.lineTo(face.c.x, face.c.y);
-            context.closePath();
-            context.fillStyle = `rgba(${Math.round(196 * face.light)}, ${Math.round(137 * face.light)}, ${Math.round(82 * face.light)}, 0.98)`;
-            context.fill();
-            context.strokeStyle = "rgba(70, 43, 25, 0.22)";
-            context.lineWidth = Math.max(0.6, window.devicePixelRatio || 1);
-            context.stroke();
+        let faceIndex = 0;
+        function drawBatch() {
+            if (generation !== renderGeneration) return;
+
+            const end = Math.min(faceIndex + facesPerFrame, faces.length);
+            for (; faceIndex < end; faceIndex++) {
+                const face = faces[faceIndex];
+                context.beginPath();
+                context.moveTo(face.a.x, face.a.y);
+                context.lineTo(face.b.x, face.b.y);
+                context.lineTo(face.c.x, face.c.y);
+                context.closePath();
+                context.fillStyle = `rgba(${Math.round(196 * face.light)}, ${Math.round(137 * face.light)}, ${Math.round(82 * face.light)}, 0.98)`;
+                context.fill();
+                context.strokeStyle = "rgba(70, 43, 25, 0.22)";
+                context.lineWidth = Math.max(0.6, window.devicePixelRatio || 1);
+                context.stroke();
+            }
+
+            if (faceIndex < faces.length) animationFrame = requestAnimationFrame(drawBatch);
+            else animationFrame = 0;
         }
+
+        animationFrame = requestAnimationFrame(drawBatch);
     }
 
     function pointerDown(event) {
@@ -132,6 +153,8 @@ export function createMeshPreview(canvas) {
         update,
         resetCamera,
         dispose() {
+            renderGeneration++;
+            if (animationFrame) cancelAnimationFrame(animationFrame);
             observer.disconnect();
             canvas.removeEventListener("pointerdown", pointerDown);
             canvas.removeEventListener("pointermove", pointerMove);

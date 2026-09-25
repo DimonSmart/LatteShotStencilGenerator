@@ -27,7 +27,7 @@
             <label>Minimum feature <input type="number" min="0.001" step="0.1" @bind="MinimumFeatureSize" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
             <label>Generation resolution <input type="number" min="0.001" step="0.01" @bind="GenerationResolution" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
             <label>SVG segments <input type="number" min="1" step="1" @bind="MaximumFlattenedSvgSegments" @bind:after="ApplyActiveConfigurationAsync" /></label>
-            <label>Mesh triangles <input type="number" min="1" step="1" @bind="MaximumMeshTriangles" @bind:after="ApplyActiveConfigurationAsync" /></label>
+            <label>STL mesh triangles <input type="number" min="1" step="1" @bind="MaximumMeshTriangles" @bind:after="ApplyActiveConfigurationAsync" /></label>
         </div>
         <h3>Working area</h3>
         <div class="settings-grid">
@@ -89,7 +89,7 @@
                 <p class="mesh-preview-placeholder" role="status">@PreviewPlaceholder</p>
             }
         </div>
-        <small>Drag to rotate · Shift-drag to pan · Scroll to zoom</small>
+        <small>Drag to rotate · Shift-drag to pan · Scroll to zoom · Preview capped at @(PreviewMeshBuilder.DefaultMaximumTriangles.ToString("N0")) triangles; STL export always uses full geometry.</small>
         @if (PreviewInteractionError is not null)
         {
             <p class="invalid" role="alert">@PreviewInteractionError</p>
@@ -170,7 +170,7 @@
     <dl>
         <dt>Card</dt><dd>@Preset.CardWidth × @Preset.CardHeight mm</dd>
         <dt>Working area</dt><dd>@Preset.WorkingArea.X, @Preset.WorkingArea.Y · @Preset.WorkingArea.Width × @Preset.WorkingArea.Height mm</dd>
-        <dt>Mesh validation</dt><dd class="@(IsReadyForExport ? "valid" : "invalid")">@ExportStatus</dd>
+        <dt>STL readiness</dt><dd class="@(IsReadyForExport ? "valid" : "invalid")">@ExportStatus</dd>
     </dl>
     @if (Processing.IsBusy)
     {
@@ -204,8 +204,8 @@
     private BridgeMode SelectedBridgeMode = StencilPreset.ReferenceDonut.BridgeConfiguration.Mode;
     private double BridgeWidthMm = StencilPreset.ReferenceDonut.BridgeConfiguration.BridgeWidthMm;
     private CardGeometry? CurrentGeometry;
-    private MeshValidationResult CurrentValidation = new(false, "Import SVG artwork to validate the generated mesh.");
     private MeshPreviewModel? PreviewMesh;
+    private string? PreviewAvailabilityMessage;
     private ElementReference MeshPreviewCanvas;
     private IJSObjectReference? PreviewModule;
     private IJSObjectReference? PreviewController;
@@ -217,22 +217,26 @@
     private readonly WorkspaceProcessingState Processing = new();
 
     private CardGeometry PreviewGeometry => CurrentGeometry!;
-    private bool IsReadyForExport => Configuration.IsValid && Workspace.ImportedArtwork is not null && Workspace.ImportError is null && CurrentGeometry?.IsExportable == true && CurrentValidation.IsValid;
+    private bool IsReadyForExport => Configuration.IsValid && Workspace.ImportedArtwork is not null && Workspace.ImportError is null && CurrentGeometry?.IsExportable == true;
     private bool CanDownload => IsReadyForExport && !IsDownloading;
-    private string ExportStatus => Configuration.ValidationErrors.FirstOrDefault() ?? Workspace.ImportError ?? CurrentGeometry?.ValidationMessage ??
-        (CurrentValidation.IsValid ? "Valid and ready for export" : CurrentValidation.Message);
+    private string ExportStatus => Configuration.ValidationErrors.FirstOrDefault()
+        ?? Workspace.ImportError
+        ?? CurrentGeometry?.ValidationMessage
+        ?? (Workspace.ImportedArtwork is null
+            ? "Import SVG artwork to prepare an STL."
+            : "Geometry ready. The full STL mesh will be built and validated before download.");
     private string PreviewPlaceholder => !Configuration.IsValid
         ? "Fix the card settings to create a preview."
         : Workspace.ImportError is not null
         ? "The selected artwork is invalid. Import a valid SVG to create a 3D preview."
         : Workspace.ImportedArtwork is null
             ? "Import SVG artwork to create a 3D preview."
-            : "The current settings do not produce a valid preview mesh.";
+            : PreviewAvailabilityMessage ?? "The current settings do not produce a valid preview mesh.";
 
     protected override void OnInitialized()
     {
         Workspace = new SvgUploadWorkspace(SvgImporter, CaptionFontOutlines, Preset);
-        RefreshGeometry();
+        InitializeGeometryState();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -271,45 +275,41 @@
                 CaptionText = Workspace.Caption.Text;
                 CaptionFont = Workspace.Caption.Font;
             }
-            RefreshGeometry();
         }
         catch (IOException)
         {
             Workspace.TryImport(args.File.Name, new byte[SvgImportAdapter.MaximumFileBytes + 1]);
-            RefreshGeometry();
         }
+
+        await RefreshGeometryCoreAsync();
     });
 
-    private Task ApplyPlacementAsync() => RunProcessingAsync("Regenerating preview…", () =>
+    private Task ApplyPlacementAsync() => RunProcessingAsync("Building geometry…", async () =>
     {
         Workspace.AdjustPlacement(ScalePercent, OffsetX, OffsetY);
-        RefreshGeometry();
-        return Task.CompletedTask;
+        await RefreshGeometryCoreAsync();
     });
 
-    private Task ResetPlacementAsync() => RunProcessingAsync("Regenerating preview…", () =>
+    private Task ResetPlacementAsync() => RunProcessingAsync("Building geometry…", async () =>
     {
         Workspace.ResetPlacement();
         SyncPlacementControls();
-        RefreshGeometry();
-        return Task.CompletedTask;
+        await RefreshGeometryCoreAsync();
     });
 
-    private Task ApplyCaptionAsync() => RunProcessingAsync("Regenerating preview…", () =>
+    private Task ApplyCaptionAsync() => RunProcessingAsync("Building geometry…", async () =>
     {
         Workspace.SetCaption(CaptionText);
-        RefreshGeometry();
-        return Task.CompletedTask;
+        await RefreshGeometryCoreAsync();
     });
 
-    private Task ApplyCaptionFontAsync() => RunProcessingAsync("Regenerating preview…", () =>
+    private Task ApplyCaptionFontAsync() => RunProcessingAsync("Building geometry…", async () =>
     {
         Workspace.SetCaptionFont(CaptionFont);
-        RefreshGeometry();
-        return Task.CompletedTask;
+        await RefreshGeometryCoreAsync();
     });
 
-    private Task ApplyBridgeConfigurationAsync() => RunProcessingAsync("Regenerating preview…", () =>
+    private Task ApplyBridgeConfigurationAsync() => RunProcessingAsync("Building geometry…", async () =>
     {
         if (double.IsFinite(BridgeWidthMm) && BridgeWidthMm > 0)
         {
@@ -318,31 +318,41 @@
                 BridgeConfiguration = new BridgeConfiguration(
                     SelectedBridgeMode,
                     BridgeWidthMm,
-                preset.BridgeConfiguration.MinimumBridgeWidthMm)
+                    preset.BridgeConfiguration.MinimumBridgeWidthMm)
             });
             ApplyActiveConfiguration();
         }
-        return Task.CompletedTask;
+
+        await RefreshGeometryCoreAsync();
     });
 
-    private Task RefreshGeometryAsync() => RunProcessingAsync("Regenerating preview…", () =>
-    {
-        RefreshGeometry();
-        return Task.CompletedTask;
-    });
+    private Task RefreshGeometryAsync() => RunProcessingAsync("Building geometry…", RefreshGeometryCoreAsync);
 
-    private void RefreshGeometry()
+    private void InitializeGeometryState()
     {
         PreviewMesh = null;
+        PreviewAvailabilityMessage = null;
         DownloadError = null;
+        CurrentGeometry = Configuration.IsValid
+            ? CardGeometry.Create(Preset, StencilArtwork.Empty, Workspace.BridgeConfiguration, Workspace.CreateCaptionGeometry())
+            : null;
+        PreviewRevision++;
+    }
+
+    private async Task RefreshGeometryCoreAsync()
+    {
+        PreviewMesh = null;
+        PreviewAvailabilityMessage = null;
+        DownloadError = null;
+
         if (!Configuration.IsValid)
         {
             CurrentGeometry = null;
-            CurrentValidation = new MeshValidationResult(false, string.Join(" ", Configuration.ValidationErrors));
             PreviewRevision++;
             return;
         }
 
+        await SetProcessingStageAsync("Building geometry…");
         try
         {
             CurrentGeometry = CardGeometry.Create(
@@ -350,17 +360,22 @@
                 Workspace.Placement?.ToStencilArtwork(InvertStencil, Preset.GenerationResolutionMm, Preset.MaximumFlattenedSvgSegments) ?? StencilArtwork.Empty,
                 Workspace.BridgeConfiguration,
                 Workspace.CreateCaptionGeometry());
-            var mesh = CardMeshGenerator.Generate(CurrentGeometry);
-            CurrentValidation = MeshValidator.Validate(mesh);
-            if (Workspace.ImportedArtwork is not null && Workspace.ImportError is null && CurrentValidation.IsValid)
-                PreviewMesh = MeshPreviewModel.Create(mesh);
+
+            if (Workspace.ImportedArtwork is not null && Workspace.ImportError is null && CurrentGeometry.IsExportable)
+            {
+                await SetProcessingStageAsync("Preparing 3D preview…");
+                var preview = PreviewMeshBuilder.Build(CurrentGeometry);
+                PreviewMesh = preview.Model;
+                PreviewAvailabilityMessage = preview.Message;
+            }
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             CurrentGeometry = null;
-            CurrentValidation = new MeshValidationResult(false,
-                $"Mesh generation failed: {exception.Message} Adjust the artwork placement, caption, or bridges.");
+            PreviewAvailabilityMessage =
+                $"Geometry preparation failed: {exception.Message} Adjust the artwork placement, caption, bridges, or generation resolution.";
         }
+
         PreviewRevision++;
     }
 
@@ -370,14 +385,14 @@
             await PreviewController.InvokeVoidAsync("resetCamera");
     }
 
-    private async Task DownloadStlAsync()
+    private Task DownloadStlAsync() => RunProcessingAsync("Building full STL mesh…", async () =>
     {
-        if (!CanDownload || Processing.IsBusy || Workspace.ImportedArtwork is null) return;
+        if (!CanDownload || Workspace.ImportedArtwork is null) return;
 
         IsDownloading = true;
         DownloadError = null;
         await InvokeAsync(StateHasChanged);
-        await Task.Yield();
+        await Task.Delay(1);
 
         try
         {
@@ -391,6 +406,10 @@
                 return;
             }
 
+            Processing.UpdateMessage("Preparing STL download…");
+            await InvokeAsync(StateHasChanged);
+            await Task.Delay(1);
+
             await using var module = await JavaScript.InvokeAsync<IJSObjectReference>("import", "./js/download.js");
             await module.InvokeVoidAsync("downloadBytes", export.FileName, export.Content);
         }
@@ -402,7 +421,7 @@
         {
             IsDownloading = false;
         }
-    }
+    });
 
     private void SyncPlacementControls()
     {
@@ -421,11 +440,11 @@
         }
     }
 
-    private Task ResetConfigurationAsync() => RunProcessingAsync("Regenerating preview…", () =>
+    private Task ResetConfigurationAsync() => RunProcessingAsync("Building geometry…", async () =>
     {
         Configuration.ResetToReference();
         ApplyActiveConfiguration();
-        return Task.CompletedTask;
+        await RefreshGeometryCoreAsync();
     });
 
     private void EditConfiguration(Func<StencilPreset, StencilPreset> edit)
@@ -433,10 +452,10 @@
         Configuration.Edit(edit);
     }
 
-    private Task ApplyActiveConfigurationAsync() => RunProcessingAsync("Regenerating preview…", () =>
+    private Task ApplyActiveConfigurationAsync() => RunProcessingAsync("Building geometry…", async () =>
     {
         ApplyActiveConfiguration();
-        return Task.CompletedTask;
+        await RefreshGeometryCoreAsync();
     });
 
     private void ApplyActiveConfiguration()
@@ -448,7 +467,6 @@
             BridgeWidthMm = Preset.BridgeConfiguration.BridgeWidthMm;
             if (Workspace.Placement is not null) SyncPlacementControls();
         }
-        RefreshGeometry();
     }
 
     private async Task RunProcessingAsync(string message, Func<Task> operation)
@@ -456,7 +474,7 @@
         if (!Processing.TryBegin(message)) return;
 
         await InvokeAsync(StateHasChanged);
-        await Task.Yield();
+        await Task.Delay(1);
 
         try
         {
@@ -467,6 +485,13 @@
             Processing.Complete();
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    private async Task SetProcessingStageAsync(string message)
+    {
+        Processing.UpdateMessage(message);
+        await InvokeAsync(StateHasChanged);
+        await Task.Delay(1);
     }
 
     private double CardWidth { get => Preset.CardWidth; set => EditConfiguration(p => p with { CardWidth = value }); }

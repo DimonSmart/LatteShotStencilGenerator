@@ -15,11 +15,24 @@ public sealed class WorkspaceProcessingStateTests
         Assert.Equal("Importing SVG artwork…", state.Message);
         Assert.False(state.TryBegin("Regenerating preview…"));
 
+        state.UpdateMessage("Building geometry…");
+        Assert.Equal("Building geometry…", state.Message);
+
         state.Complete();
 
         Assert.False(state.IsBusy);
         Assert.Null(state.Message);
         Assert.True(state.TryBegin("Regenerating preview…"));
+    }
+
+    [Fact]
+    public void UpdateMessage_RequiresAnActiveOperation()
+    {
+        var state = new WorkspaceProcessingState();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => state.UpdateMessage("Preparing 3D preview…"));
+
+        Assert.Contains("no operation is active", exception.Message);
     }
 
     [Fact]
