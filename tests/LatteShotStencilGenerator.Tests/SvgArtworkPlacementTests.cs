@@ -72,7 +72,7 @@ public sealed class SvgArtworkPlacementTests
 
     private SvgArtworkPlacement Fit(string svg)
     {
-        var result = Assert.IsType<SvgImportResult>(_adapter.Import("art.svg", Encoding.UTF8.GetBytes(svg)).Value);
+        var result = Assert.IsType<SvgImportResult>(_adapter.Import("art.svg", Encoding.UTF8.GetBytes(svg), StencilPreset.ReferenceDonut.MaximumFlattenedSvgSegments).Value);
         return SvgArtworkPlacement.Fit(result, Preset.WorkingArea, Preset.ArtworkPadding);
     }
 }

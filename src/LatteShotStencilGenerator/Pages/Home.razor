@@ -1,20 +1,73 @@
 @page "/"
 @inject ISvgImportAdapter SvgImporter
 @inject ICaptionFontOutlineAdapter CaptionFontOutlines
+@inject IJSRuntime JavaScript
+@implements IAsyncDisposable
 
 <PageTitle>Latte Card Generator</PageTitle>
 
 <section class="workspace">
     <h1>Latte Card Generator</h1>
-    <p><strong>@Preset.Name</strong> · immutable reference layout</p>
-    <svg class="card-preview" viewBox="0 0 @Preset.CardWidth @Preset.CardHeight" role="img" aria-label="Reference stencil card geometry">
+    <p><strong>@Configuration.SelectedPresetName</strong>@(Configuration.SelectedPresetName == StencilPreset.ReferenceDonut.Name ? " · immutable reference layout" : " · editable working copy")</p>
+    <fieldset class="configuration-controls" disabled="@Processing.IsBusy">
+        <legend>Card settings</legend>
+        <label>Preset
+            <select @bind="SelectedPresetName" @bind:after="ApplyActiveConfigurationAsync">
+                <option value="@StencilPreset.ReferenceDonut.Name">@StencilPreset.ReferenceDonut.Name</option>
+                <option value="@StencilConfigurationState.CustomName">@StencilConfigurationState.CustomName</option>
+            </select>
+        </label>
+        <div class="settings-grid">
+            <label>Card width <input type="number" step="0.001" @bind="CardWidth" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
+            <label>Card height <input type="number" step="0.001" @bind="CardHeight" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
+            <label>Base thickness <input type="number" step="0.001" @bind="BaseThickness" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
+            <label>Raised layer <input type="number" step="0.001" @bind="RaisedLayerThickness" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
+            <label>Artwork padding <input type="number" step="0.1" @bind="ArtworkPadding" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
+            <label>Minimum wall <input type="number" min="0.001" step="0.1" @bind="MinimumWallThickness" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
+            <label>Minimum feature <input type="number" min="0.001" step="0.1" @bind="MinimumFeatureSize" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
+            <label>Generation resolution <input type="number" min="0.001" step="0.01" @bind="GenerationResolution" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
+            <label>SVG segments <input type="number" min="1" step="1" @bind="MaximumFlattenedSvgSegments" @bind:after="ApplyActiveConfigurationAsync" /></label>
+            <label>Mesh triangles <input type="number" min="1" step="1" @bind="MaximumMeshTriangles" @bind:after="ApplyActiveConfigurationAsync" /></label>
+        </div>
+        <h3>Working area</h3>
+        <div class="settings-grid">
+            <label>X <input type="number" step="0.001" @bind="WorkingX" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
+            <label>Y <input type="number" step="0.001" @bind="WorkingY" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
+            <label>Width <input type="number" step="0.001" @bind="WorkingWidth" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
+            <label>Height <input type="number" step="0.001" @bind="WorkingHeight" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
+        </div>
+        <h3>Caption area</h3>
+        <div class="settings-grid">
+            <label>X <input type="number" step="0.001" @bind="CaptionX" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
+            <label>Y <input type="number" step="0.001" @bind="CaptionY" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
+            <label>Width <input type="number" step="0.001" @bind="CaptionAreaWidth" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
+            <label>Height <input type="number" step="0.001" @bind="CaptionAreaHeight" @bind:after="ApplyActiveConfigurationAsync" /> mm</label>
+        </div>
+        <button type="button" @onclick="ResetConfigurationAsync">Reset to Reference / Donut</button>
+        @if (!Configuration.IsValid)
+        {
+            <div class="invalid" role="alert">
+                <strong>Fix card settings before preview or export:</strong>
+                <ul>
+                    @foreach (var error in Configuration.ValidationErrors)
+                    {
+                        <li>@error</li>
+                    }
+                </ul>
+            </div>
+        }
+    </fieldset>
+    @if (Configuration.IsValid && CurrentGeometry is not null)
+    {
+    <svg class="card-preview" viewBox="0 0 @Preset.CardWidth @Preset.CardHeight" role="img" aria-label="Stencil card geometry">
         <rect x="0" y="0" width="@Preset.CardWidth" height="@Preset.CardHeight" class="card" />
         <rect x="@PreviewGeometry.WorkingArea.X" y="@PreviewGeometry.WorkingArea.Y" width="@PreviewGeometry.WorkingArea.Width" height="@PreviewGeometry.WorkingArea.Height" class="working-area" />
         @if (Workspace.Placement is not null)
         {
-            @foreach (var contour in PreviewGeometry.OpeningContours)
+            <path class="artwork" d="@Path(PreviewGeometry.OpeningContours)" fill-rule="nonzero" />
+            @foreach (var bridge in PreviewGeometry.Bridges)
             {
-                <polygon class="artwork" points="@Points(contour.Points)" fill-rule="@(contour.FillRule == StencilFillRule.EvenOdd ? "evenodd" : "nonzero")" />
+                <polygon class="bridge" points="@Points(bridge.Contour.Points)" />
             }
             @if (PreviewGeometry.Caption is not null)
             {
@@ -25,9 +78,29 @@
             }
         }
     </svg>
+    }
+    <section class="mesh-preview-section" aria-labelledby="mesh-preview-heading">
+        <div class="mesh-preview-heading">
+            <h2 id="mesh-preview-heading">3D preview</h2>
+            <button type="button" disabled="@(PreviewMesh is null || Processing.IsBusy)" @onclick="ResetPreviewCameraAsync">Reset camera</button>
+        </div>
+        <div class="mesh-preview-frame">
+            <canvas @ref="MeshPreviewCanvas" class="mesh-preview" tabindex="0"
+                    aria-label="Interactive 3D preview of the generated stencil mesh"></canvas>
+            @if (PreviewMesh is null)
+            {
+                <p class="mesh-preview-placeholder" role="status">@PreviewPlaceholder</p>
+            }
+        </div>
+        <small>Drag to rotate · Shift-drag to pan · Scroll to zoom</small>
+        @if (PreviewInteractionError is not null)
+        {
+            <p class="invalid" role="alert">@PreviewInteractionError</p>
+        }
+    </section>
     <div class="upload-controls">
         <label for="svg-upload">SVG artwork</label>
-        <InputFile id="svg-upload" accept="image/svg+xml,.svg" OnChange="ImportSvgAsync" />
+        <InputFile id="svg-upload" accept="image/svg+xml,.svg" OnChange="ImportSvgAsync" disabled="@Processing.IsBusy" />
         @if (Workspace.ImportedArtwork is not null)
         {
             <p class="valid" role="status">Imported @Workspace.ImportedArtwork.SourceFileName. Caption default: @Workspace.CaptionDefault</p>
@@ -39,11 +112,11 @@
     </div>
     @if (Workspace.ImportedArtwork is not null)
     {
-        <fieldset class="caption-controls">
+        <fieldset class="caption-controls" disabled="@Processing.IsBusy">
             <legend>Embossed caption</legend>
-            <label>Caption <input @bind="CaptionText" @bind:after="ApplyCaption" /></label>
+            <label>Caption <input @bind="CaptionText" @bind:after="ApplyCaptionAsync" /></label>
             <label>Font
-                <select @bind="CaptionFont" @bind:after="ApplyCaptionFont">
+                <select @bind="CaptionFont" @bind:after="ApplyCaptionFontAsync">
                     @foreach (var font in Enum.GetValues<CaptionFont>())
                     {
                         <option value="@font">@font</option>
@@ -51,31 +124,79 @@
                 </select>
             </label>
         </fieldset>
+        @if (CurrentGeometry?.ManufacturabilityFindings.Count > 0)
+        {
+            <section class="manufacturability-warnings" aria-labelledby="manufacturability-heading">
+                <h2 id="manufacturability-heading">Manufacturability warnings</h2>
+                <p>These warnings do not prevent STL export.</p>
+                <ul>
+                    @foreach (var finding in CurrentGeometry.ManufacturabilityFindings)
+                    {
+                        <li>@finding.Message</li>
+                    }
+                </ul>
+            </section>
+        }
     }
     @if (Workspace.Placement is not null)
     {
-        <fieldset class="placement-controls">
+        <fieldset class="placement-controls" disabled="@Processing.IsBusy">
             <legend>Artwork placement</legend>
-            <label>Scale <input type="number" min="0.1" step="1" @bind="ScalePercent" @bind:after="ApplyPlacement" /> %</label>
-            <label>X offset <input type="number" step="0.1" @bind="OffsetX" @bind:after="ApplyPlacement" /> mm</label>
-            <label>Y offset <input type="number" step="0.1" @bind="OffsetY" @bind:after="ApplyPlacement" /> mm</label>
-            <label><input type="checkbox" @bind="InvertStencil" /> Invert stencil</label>
-            <button type="button" @onclick="ResetPlacement">Reset placement</button>
+            <label>Scale <input type="number" min="0.1" step="1" @bind="ScalePercent" @bind:after="ApplyPlacementAsync" /> %</label>
+            <label>X offset <input type="number" step="0.1" @bind="OffsetX" @bind:after="ApplyPlacementAsync" /> mm</label>
+            <label>Y offset <input type="number" step="0.1" @bind="OffsetY" @bind:after="ApplyPlacementAsync" /> mm</label>
+            <label><input type="checkbox" @bind="InvertStencil" @bind:after="RefreshGeometryAsync" /> Invert stencil</label>
+            <button type="button" @onclick="ResetPlacementAsync">Reset placement</button>
             @if (Workspace.Placement.ValidationMessage is not null)
             {
                 <p class="invalid" role="alert">@Workspace.Placement.ValidationMessage</p>
             }
         </fieldset>
+        <fieldset class="bridge-controls" disabled="@Processing.IsBusy">
+            <legend>Material bridges</legend>
+            <label>Mode
+                <select @bind="SelectedBridgeMode" @bind:after="ApplyBridgeConfigurationAsync">
+                    @foreach (var mode in Enum.GetValues<BridgeMode>())
+                    {
+                        <option value="@mode">@mode</option>
+                    }
+                </select>
+            </label>
+            <label>Width <input type="number" min="@Preset.BridgeConfiguration.MinimumBridgeWidthMm" step="0.1" @bind="BridgeWidthMm" @bind:after="ApplyBridgeConfigurationAsync" /> mm</label>
+            <small>Minimum @Preset.BridgeConfiguration.MinimumBridgeWidthMm mm</small>
+            @if (CurrentGeometry?.ValidationMessage is not null)
+            {
+                <p class="invalid" role="alert">@CurrentGeometry.ValidationMessage</p>
+            }
+        </fieldset>
     }
     <dl>
         <dt>Card</dt><dd>@Preset.CardWidth × @Preset.CardHeight mm</dd>
-        <dt>Working area</dt><dd>@PreviewGeometry.WorkingArea.X, @PreviewGeometry.WorkingArea.Y · @PreviewGeometry.WorkingArea.Width × @PreviewGeometry.WorkingArea.Height mm</dd>
-        <dt>Mesh validation</dt><dd class="@(Validation.IsValid ? "valid" : "invalid")">@(Validation.IsValid ? "Valid and ready for export" : Validation.Message)</dd>
+        <dt>Working area</dt><dd>@Preset.WorkingArea.X, @Preset.WorkingArea.Y · @Preset.WorkingArea.Width × @Preset.WorkingArea.Height mm</dd>
+        <dt>Mesh validation</dt><dd class="@(IsReadyForExport ? "valid" : "invalid")">@ExportStatus</dd>
     </dl>
+    @if (Processing.IsBusy)
+    {
+        <p class="processing" role="status" aria-live="polite">@Processing.Message</p>
+    }
+    @if (Workspace.ImportedArtwork is not null)
+    {
+        <section class="download-controls" aria-labelledby="download-heading">
+            <h2 id="download-heading">Download STL</h2>
+            <button type="button" disabled="@(!CanDownload || Processing.IsBusy)" @onclick="DownloadStlAsync">
+                @(IsDownloading ? "Generating STL…" : "Download binary STL")
+            </button>
+            @if (DownloadError is not null)
+            {
+                <p class="invalid" role="alert">@DownloadError</p>
+            }
+        </section>
+    }
 </section>
 
 @code {
-    private static readonly StencilPreset Preset = StencilPreset.ReferenceDonut;
+    private readonly StencilConfigurationState Configuration = new();
+    private StencilPreset Preset => Configuration.ActivePreset;
     private SvgUploadWorkspace Workspace = default!;
     private double ScalePercent = 100;
     private double OffsetX;
@@ -83,13 +204,64 @@
     private bool InvertStencil;
     private string CaptionText = string.Empty;
     private CaptionFont CaptionFont;
+    private BridgeMode SelectedBridgeMode = StencilPreset.ReferenceDonut.BridgeConfiguration.Mode;
+    private double BridgeWidthMm = StencilPreset.ReferenceDonut.BridgeConfiguration.BridgeWidthMm;
+    private CardGeometry? CurrentGeometry;
+    private MeshValidationResult CurrentValidation = new(false, "Import SVG artwork to validate the generated mesh.");
+    private MeshPreviewModel? PreviewMesh;
+    private ElementReference MeshPreviewCanvas;
+    private IJSObjectReference? PreviewModule;
+    private IJSObjectReference? PreviewController;
+    private long PreviewRevision;
+    private long RenderedPreviewRevision = -1;
+    private string? PreviewInteractionError;
+    private string? DownloadError;
+    private bool IsDownloading;
+    private readonly WorkspaceProcessingState Processing = new();
 
-    private CardGeometry PreviewGeometry => CardGeometry.Create(Preset, Workspace.Placement?.ToStencilArtwork(InvertStencil) ?? StencilArtwork.Empty, Workspace.CreateCaptionGeometry());
-    private MeshValidationResult Validation => MeshValidator.Validate(CardMeshGenerator.Generate(PreviewGeometry));
+    private CardGeometry PreviewGeometry => CurrentGeometry!;
+    private bool IsReadyForExport => Configuration.IsValid && Workspace.ImportedArtwork is not null && Workspace.ImportError is null && CurrentGeometry?.IsExportable == true && CurrentValidation.IsValid;
+    private bool CanDownload => IsReadyForExport && !IsDownloading;
+    private string ExportStatus => Configuration.ValidationErrors.FirstOrDefault() ?? Workspace.ImportError ?? CurrentGeometry?.ValidationMessage ??
+        (CurrentValidation.IsValid ? "Valid and ready for export" : CurrentValidation.Message);
+    private string PreviewPlaceholder => !Configuration.IsValid
+        ? "Fix the card settings to create a preview."
+        : Workspace.ImportError is not null
+        ? "The selected artwork is invalid. Import a valid SVG to create a 3D preview."
+        : Workspace.ImportedArtwork is null
+            ? "Import SVG artwork to create a 3D preview."
+            : "The current settings do not produce a valid preview mesh.";
 
-    protected override void OnInitialized() => Workspace = new SvgUploadWorkspace(SvgImporter, CaptionFontOutlines, Preset);
+    protected override void OnInitialized()
+    {
+        Workspace = new SvgUploadWorkspace(SvgImporter, CaptionFontOutlines, Preset);
+        RefreshGeometry();
+    }
 
-    private async Task ImportSvgAsync(InputFileChangeEventArgs args)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            PreviewModule ??= await JavaScript.InvokeAsync<IJSObjectReference>("import", "./js/mesh-preview.js");
+            PreviewController ??= await PreviewModule.InvokeAsync<IJSObjectReference>("createMeshPreview", MeshPreviewCanvas);
+            if (RenderedPreviewRevision != PreviewRevision)
+            {
+                await PreviewController.InvokeVoidAsync("update", PreviewMesh);
+                RenderedPreviewRevision = PreviewRevision;
+            }
+        }
+        catch (JSException exception)
+        {
+            var message = $"The 3D preview could not be displayed: {exception.Message}";
+            if (PreviewInteractionError != message)
+            {
+                PreviewInteractionError = message;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
+    private Task ImportSvgAsync(InputFileChangeEventArgs args) => RunProcessingAsync("Importing SVG artwork…", async () =>
     {
         try
         {
@@ -102,24 +274,138 @@
                 CaptionText = Workspace.Caption.Text;
                 CaptionFont = Workspace.Caption.Font;
             }
+            RefreshGeometry();
         }
         catch (IOException)
         {
             Workspace.TryImport(args.File.Name, new byte[SvgImportAdapter.MaximumFileBytes + 1]);
+            RefreshGeometry();
         }
-    }
+    });
 
-    private void ApplyPlacement() => Workspace.AdjustPlacement(ScalePercent, OffsetX, OffsetY);
+    private Task ApplyPlacementAsync() => RunProcessingAsync("Regenerating preview…", () =>
+    {
+        Workspace.AdjustPlacement(ScalePercent, OffsetX, OffsetY);
+        RefreshGeometry();
+        return Task.CompletedTask;
+    });
 
-    private void ResetPlacement()
+    private Task ResetPlacementAsync() => RunProcessingAsync("Regenerating preview…", () =>
     {
         Workspace.ResetPlacement();
         SyncPlacementControls();
+        RefreshGeometry();
+        return Task.CompletedTask;
+    });
+
+    private Task ApplyCaptionAsync() => RunProcessingAsync("Regenerating preview…", () =>
+    {
+        Workspace.SetCaption(CaptionText);
+        RefreshGeometry();
+        return Task.CompletedTask;
+    });
+
+    private Task ApplyCaptionFontAsync() => RunProcessingAsync("Regenerating preview…", () =>
+    {
+        Workspace.SetCaptionFont(CaptionFont);
+        RefreshGeometry();
+        return Task.CompletedTask;
+    });
+
+    private Task ApplyBridgeConfigurationAsync() => RunProcessingAsync("Regenerating preview…", () =>
+    {
+        if (double.IsFinite(BridgeWidthMm) && BridgeWidthMm > 0)
+        {
+            EditConfiguration(preset => preset with
+            {
+                BridgeConfiguration = new BridgeConfiguration(
+                    SelectedBridgeMode,
+                    BridgeWidthMm,
+                preset.BridgeConfiguration.MinimumBridgeWidthMm)
+            });
+            ApplyActiveConfiguration();
+        }
+        return Task.CompletedTask;
+    });
+
+    private Task RefreshGeometryAsync() => RunProcessingAsync("Regenerating preview…", () =>
+    {
+        RefreshGeometry();
+        return Task.CompletedTask;
+    });
+
+    private void RefreshGeometry()
+    {
+        PreviewMesh = null;
+        DownloadError = null;
+        if (!Configuration.IsValid)
+        {
+            CurrentGeometry = null;
+            CurrentValidation = new MeshValidationResult(false, string.Join(" ", Configuration.ValidationErrors));
+            PreviewRevision++;
+            return;
+        }
+
+        CurrentGeometry = CardGeometry.Create(
+            Preset,
+            Workspace.Placement?.ToStencilArtwork(InvertStencil) ?? StencilArtwork.Empty,
+            Workspace.BridgeConfiguration,
+            Workspace.CreateCaptionGeometry());
+
+        try
+        {
+            var mesh = CardMeshGenerator.Generate(CurrentGeometry);
+            CurrentValidation = MeshValidator.Validate(mesh);
+            if (Workspace.ImportedArtwork is not null && Workspace.ImportError is null && CurrentValidation.IsValid)
+                PreviewMesh = MeshPreviewModel.Create(mesh);
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            CurrentValidation = new MeshValidationResult(false,
+                $"Mesh generation failed: {exception.Message} Adjust the artwork placement, caption, or bridges.");
+        }
+        PreviewRevision++;
     }
 
-    private void ApplyCaption() => Workspace.SetCaption(CaptionText);
+    private async Task ResetPreviewCameraAsync()
+    {
+        if (PreviewController is not null && PreviewMesh is not null)
+            await PreviewController.InvokeVoidAsync("resetCamera");
+    }
 
-    private void ApplyCaptionFont() => Workspace.SetCaptionFont(CaptionFont);
+    private async Task DownloadStlAsync()
+    {
+        if (!CanDownload || Processing.IsBusy || Workspace.ImportedArtwork is null) return;
+
+        IsDownloading = true;
+        DownloadError = null;
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+
+        try
+        {
+            var export = StlExportGenerator.Generate(
+                CurrentGeometry!,
+                Workspace.ImportedArtwork.SourceFileName,
+                Workspace.Caption.Text);
+            if (!export.IsSuccess)
+            {
+                DownloadError = export.Error;
+                return;
+            }
+
+            await using var module = await JavaScript.InvokeAsync<IJSObjectReference>("import", "./js/download.js");
+            await module.InvokeVoidAsync("downloadBytes", export.FileName, export.Content);
+        }
+        catch (JSException exception)
+        {
+            DownloadError = $"The STL was generated, but the browser could not download it: {exception.Message} Try again or check browser download permissions.";
+        }
+        finally
+        {
+            IsDownloading = false;
+        }
+    }
 
     private void SyncPlacementControls()
     {
@@ -128,5 +414,95 @@
         OffsetY = Workspace.Placement.OffsetY;
     }
 
+    private string SelectedPresetName
+    {
+        get => Configuration.SelectedPresetName;
+        set
+        {
+            if (value == StencilConfigurationState.CustomName) Configuration.SelectCustom();
+            else Configuration.SelectReference();
+        }
+    }
+
+    private Task ResetConfigurationAsync() => RunProcessingAsync("Regenerating preview…", () =>
+    {
+        Configuration.ResetToReference();
+        ApplyActiveConfiguration();
+        return Task.CompletedTask;
+    });
+
+    private void EditConfiguration(Func<StencilPreset, StencilPreset> edit)
+    {
+        Configuration.Edit(edit);
+    }
+
+    private Task ApplyActiveConfigurationAsync() => RunProcessingAsync("Regenerating preview…", () =>
+    {
+        ApplyActiveConfiguration();
+        return Task.CompletedTask;
+    });
+
+    private void ApplyActiveConfiguration()
+    {
+        if (Configuration.IsValid)
+        {
+            Workspace.ApplyPreset(Preset);
+            SelectedBridgeMode = Preset.BridgeConfiguration.Mode;
+            BridgeWidthMm = Preset.BridgeConfiguration.BridgeWidthMm;
+            if (Workspace.Placement is not null) SyncPlacementControls();
+        }
+        RefreshGeometry();
+    }
+
+    private async Task RunProcessingAsync(string message, Func<Task> operation)
+    {
+        if (!Processing.TryBegin(message)) return;
+
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+
+        try
+        {
+            await operation();
+        }
+        finally
+        {
+            Processing.Complete();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private double CardWidth { get => Preset.CardWidth; set => EditConfiguration(p => p with { CardWidth = value }); }
+    private double CardHeight { get => Preset.CardHeight; set => EditConfiguration(p => p with { CardHeight = value }); }
+    private double BaseThickness { get => Preset.BaseThickness; set => EditConfiguration(p => p with { BaseThickness = value }); }
+    private double RaisedLayerThickness { get => Preset.RaisedLayerThickness; set => EditConfiguration(p => p with { RaisedLayerThickness = value }); }
+    private double ArtworkPadding { get => Preset.ArtworkPadding; set => EditConfiguration(p => p with { ArtworkPadding = value }); }
+    private double MinimumWallThickness { get => Preset.MinimumWallThicknessMm; set => EditConfiguration(p => p with { MinimumWallThicknessMm = value }); }
+    private double MinimumFeatureSize { get => Preset.MinimumFeatureSizeMm; set => EditConfiguration(p => p with { MinimumFeatureSizeMm = value }); }
+    private double GenerationResolution { get => Preset.GenerationResolutionMm; set => EditConfiguration(p => p with { GenerationResolutionMm = value }); }
+    private int MaximumFlattenedSvgSegments { get => Preset.MaximumFlattenedSvgSegments; set => EditConfiguration(p => p with { MaximumFlattenedSvgSegments = value }); }
+    private int MaximumMeshTriangles { get => Preset.MaximumMeshTriangles; set => EditConfiguration(p => p with { MaximumMeshTriangles = value }); }
+    private double WorkingX { get => Preset.WorkingArea.X; set => EditConfiguration(p => p with { WorkingArea = p.WorkingArea with { X = value } }); }
+    private double WorkingY { get => Preset.WorkingArea.Y; set => EditConfiguration(p => p with { WorkingArea = p.WorkingArea with { Y = value } }); }
+    private double WorkingWidth { get => Preset.WorkingArea.Width; set => EditConfiguration(p => p with { WorkingArea = p.WorkingArea with { Width = value } }); }
+    private double WorkingHeight { get => Preset.WorkingArea.Height; set => EditConfiguration(p => p with { WorkingArea = p.WorkingArea with { Height = value } }); }
+    private double CaptionX { get => Preset.CaptionArea.X; set => EditConfiguration(p => p with { CaptionArea = p.CaptionArea with { X = value } }); }
+    private double CaptionY { get => Preset.CaptionArea.Y; set => EditConfiguration(p => p with { CaptionArea = p.CaptionArea with { Y = value } }); }
+    private double CaptionAreaWidth { get => Preset.CaptionArea.Width; set => EditConfiguration(p => p with { CaptionArea = p.CaptionArea with { Width = value } }); }
+    private double CaptionAreaHeight { get => Preset.CaptionArea.Height; set => EditConfiguration(p => p with { CaptionArea = p.CaptionArea with { Height = value } }); }
+
     private static string Points(IReadOnlyList<PointMm> points) => string.Join(" ", points.Select(point => FormattableString.Invariant($"{point.X},{point.Y}")));
+    private static string Path(IReadOnlyList<StencilContour> contours) => string.Join(" ", contours.Select(contour =>
+        $"M {Points(contour.Points)} Z"));
+
+    public async ValueTask DisposeAsync()
+    {
+        if (PreviewController is not null)
+        {
+            try { await PreviewController.InvokeVoidAsync("dispose"); }
+            catch (JSDisconnectedException) { }
+            await PreviewController.DisposeAsync();
+        }
+        if (PreviewModule is not null) await PreviewModule.DisposeAsync();
+    }
 }

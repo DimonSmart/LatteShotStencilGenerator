@@ -17,16 +17,10 @@ public static class CardMeshGenerator
         var high = (float)p.RaisedSurfaceZ;
         var x = new[] { 0f, (float)w.X, (float)w.Right, (float)p.CardWidth };
         var y = new[] { 0f, (float)w.Y, (float)w.Bottom, (float)p.CardHeight };
-        var triangles = new List<Triangle>();
+        var triangles = new LimitedTriangleCollection(p.MaximumMeshTriangles);
         IReadOnlyList<BoundaryEdge> captionBaseBoundary = [];
 
-        for (var row = 0; row < 3; row++)
-        for (var column = 0; column < 3; column++)
-        {
-            if (row == 1 && column == 1) continue;
-            AddQuad(triangles, V(x[column], y[row], z0), V(x[column], y[row + 1], z0),
-                V(x[column + 1], y[row + 1], z0), V(x[column + 1], y[row], z0));
-        }
+        AddBaseLayer(triangles, geometry, z0, low);
 
         for (var row = 0; row < 3; row++)
         for (var column = 0; column < 3; column++)
@@ -46,7 +40,7 @@ public static class CardMeshGenerator
                 V(x[column + 1], y[row + 1], z), V(x[column], y[row + 1], z));
         }
 
-        AddWorkingArea(triangles, geometry, z0, low);
+        AddWorkingArea(triangles, geometry, low);
         var captionTopBoundary = AddCaption(triangles, geometry.Caption);
         if (geometry.Caption is not null)
             AddCaptionWalls(triangles, captionBaseBoundary, captionTopBoundary);
@@ -66,7 +60,72 @@ public static class CardMeshGenerator
         AddQuad(triangles, V(x[2], y[1], low), V(x[1], y[1], low), V(x[1], y[1], high), V(x[2], y[1], high));
         AddQuad(triangles, V(x[1], y[2], low), V(x[2], y[2], low), V(x[2], y[2], high), V(x[1], y[2], high));
 
-        return new Mesh(triangles);
+        return new Mesh(ConformTriangleEdges(triangles.Items, p.MaximumMeshTriangles).Select(RotateToLowestVertex).ToArray());
+    }
+
+    private static Triangle RotateToLowestVertex(Triangle triangle)
+    {
+        var vertices = new[] { triangle.A, triangle.B, triangle.C };
+        var first = Enumerable.Range(0, vertices.Length)
+            .OrderBy(index => vertices[index].X)
+            .ThenBy(index => vertices[index].Y)
+            .ThenBy(index => vertices[index].Z)
+            .First();
+        return first switch
+        {
+            1 => new Triangle(triangle.B, triangle.C, triangle.A),
+            2 => new Triangle(triangle.C, triangle.A, triangle.B),
+            _ => triangle
+        };
+    }
+
+    private static IReadOnlyList<Triangle> ConformTriangleEdges(IReadOnlyList<Triangle> triangles, int maximumTriangles)
+    {
+        var vertices = triangles
+            .SelectMany(triangle => new[] { triangle.A, triangle.B, triangle.C })
+            .Distinct()
+            .ToArray();
+        var result = new LimitedTriangleCollection(maximumTriangles);
+
+        foreach (var triangle in triangles)
+        {
+            var boundary = EdgePoints3D(triangle.A, triangle.B, vertices)
+                .Concat(EdgePoints3D(triangle.B, triangle.C, vertices))
+                .Concat(EdgePoints3D(triangle.C, triangle.A, vertices))
+                .ToArray();
+            if (boundary.Length == 3)
+            {
+                result.Add(triangle);
+                continue;
+            }
+
+            var centre = (triangle.A + triangle.B + triangle.C) / 3f;
+            for (var index = 0; index < boundary.Length; index++)
+            {
+                var split = new Triangle(centre, boundary[index], boundary[(index + 1) % boundary.Length]);
+                if (Vector3.Cross(split.B - split.A, split.C - split.A).LengthSquared() > 1e-12f)
+                    result.Add(split);
+            }
+        }
+        return result.Items;
+    }
+
+    private static IEnumerable<Vector3> EdgePoints3D(Vector3 start, Vector3 end, IReadOnlyList<Vector3> vertices)
+    {
+        var edge = end - start;
+        var lengthSquared = edge.LengthSquared();
+        yield return start;
+        if (lengthSquared <= 1e-12f) yield break;
+
+        foreach (var candidate in vertices
+                     .Where(candidate => candidate != start && candidate != end)
+                     .Select(candidate => (Point: candidate, T: Vector3.Dot(candidate - start, edge) / lengthSquared))
+                     .Where(candidate => candidate.T > 0f && candidate.T < 1f &&
+                                         Vector3.Cross(edge, candidate.Point - start).Length() <= 0.00001f * MathF.Max(1f, edge.Length()))
+                     .OrderBy(candidate => candidate.T))
+        {
+            yield return candidate.Point;
+        }
     }
 
     private static IReadOnlyList<BoundaryEdge> AddCaption(ICollection<Triangle> triangles, EmbossedCaption? caption)
@@ -337,34 +396,30 @@ public static class CardMeshGenerator
     private static bool SamePoint(Vector3 first, Vector3 second) =>
         Same(first.X, second.X) && Same(first.Y, second.Y);
 
-    private static void AddWorkingArea(ICollection<Triangle> triangles, CardGeometry geometry, float bottom, float top)
+    private static void AddWorkingArea(ICollection<Triangle> triangles, CardGeometry geometry, float top)
     {
         if (!geometry.IsExportable) return;
 
-        if (geometry.OpeningContours.Count == 0 && !geometry.Artwork.Invert)
+        if (geometry.OpeningContours.Count == 0)
         {
             var w = geometry.WorkingArea;
-            AddQuad(triangles, V((float)w.X, (float)w.Y, bottom), V((float)w.X, (float)w.Bottom, bottom),
-                V((float)w.Right, (float)w.Bottom, bottom), V((float)w.Right, (float)w.Y, bottom));
             AddQuad(triangles, V((float)w.X, (float)w.Y, top), V((float)w.Right, (float)w.Y, top),
                 V((float)w.Right, (float)w.Bottom, top), V((float)w.X, (float)w.Bottom, top));
             return;
         }
 
         var tess = new Tess();
-        if (!geometry.Artwork.Invert)
-            tess.AddContour(ToVertices(Rectangle(geometry.WorkingArea)));
+        tess.AddContour(ToVertices(Rectangle(geometry.WorkingArea)));
 
         foreach (var contour in geometry.OpeningContours)
         {
-            // The SVG adapter retains fill rules. Even-odd contours alternate winding by nesting;
-            // non-zero contours preserve their source winding. Reversing produces through-openings.
-            var reverse = !geometry.Artwork.Invert;
-            tess.AddContour(ToVertices(NormalizeWinding(contour, geometry.OpeningContours, reverse)));
+            tess.AddContour(ToVertices(NormalizeWinding(contour, geometry.OpeningContours, reverse: true)));
         }
 
+        foreach (var bridge in geometry.Bridges)
+            tess.AddContour(ToVertices(CounterClockwise(bridge.Contour.Points)));
+
         tess.Tessellate(WindingRule.NonZero, ElementType.Polygons, 3);
-        var boundary = new Dictionary<(string First, string Second), (Vector3 Start, Vector3 End, int Count)>();
         for (var i = 0; i < tess.ElementCount; i++)
         {
             var element = tess.Elements[(i * 3)..((i + 1) * 3)];
@@ -373,15 +428,33 @@ public static class CardMeshGenerator
             var b = ToVector(tess.Vertices[element[1]].Position, top);
             var c = ToVector(tess.Vertices[element[2]].Position, top);
             triangles.Add(new Triangle(a, b, c));
-            triangles.Add(new Triangle(ToZ(c, bottom), ToZ(b, bottom), ToZ(a, bottom)));
-            AddBoundary(boundary, a, b);
-            AddBoundary(boundary, b, c);
-            AddBoundary(boundary, c, a);
         }
 
-        foreach (var edge in boundary.Values.Where(edge => edge.Count == 1 && !IsWorkingAreaEdge(edge, geometry.WorkingArea)))
+    }
+
+    private static void AddBaseLayer(ICollection<Triangle> triangles, CardGeometry geometry, float bottom, float wallTop)
+    {
+        var tess = new Tess();
+        tess.AddContour(ToVertices(Rectangle(geometry.CardBoundary)));
+
+        foreach (var contour in geometry.OpeningContours)
+            tess.AddContour(ToVertices(NormalizeWinding(contour, geometry.OpeningContours, reverse: true)));
+        foreach (var bridge in geometry.Bridges)
+            tess.AddContour(ToVertices(CounterClockwise(bridge.Contour.Points)));
+
+        var boundary = new Dictionary<(string First, string Second), (Vector3 Start, Vector3 End, int Count)>();
+        foreach (var topTriangle in TessellateTop(tess, wallTop))
+        {
+            triangles.Add(new Triangle(ToZ(topTriangle.C, bottom), ToZ(topTriangle.B, bottom), ToZ(topTriangle.A, bottom)));
+            AddBoundary(boundary, topTriangle.A, topTriangle.B);
+            AddBoundary(boundary, topTriangle.B, topTriangle.C);
+            AddBoundary(boundary, topTriangle.C, topTriangle.A);
+        }
+
+        foreach (var edge in boundary.Values.Where(edge => edge.Count == 1 && !IsRectangleEdge(edge.Start, edge.End, geometry.CardBoundary)))
             AddQuad(triangles, edge.End, edge.Start, ToZ(edge.Start, bottom), ToZ(edge.End, bottom));
     }
+
 
     private static IEnumerable<PointMm> Rectangle(RectMm rectangle) =>
         [new(rectangle.X, rectangle.Y), new(rectangle.Right, rectangle.Y), new(rectangle.Right, rectangle.Bottom), new(rectangle.X, rectangle.Bottom)];
@@ -397,6 +470,12 @@ public static class CardMeshGenerator
     }
 
     private static double Area(IReadOnlyList<PointMm> points) => points.Zip(points.Skip(1).Append(points[0]), (a, b) => a.X * b.Y - b.X * a.Y).Sum() / 2d;
+
+    private static IEnumerable<PointMm> CounterClockwise(IReadOnlyList<PointMm> closedPoints)
+    {
+        var points = closedPoints.Take(closedPoints.Count - 1).ToArray();
+        return Area(points) >= 0 ? points : points.Reverse();
+    }
 
     private static bool Contains(IReadOnlyList<PointMm> polygon, PointMm point)
     {
@@ -429,12 +508,6 @@ public static class CardMeshGenerator
         (Same(start.Y, area.Y) && Same(end.Y, area.Y)) ||
         (Same(start.Y, area.Bottom) && Same(end.Y, area.Bottom));
 
-    private static bool IsWorkingAreaEdge((Vector3 Start, Vector3 End, int Count) edge, RectMm area) =>
-        (Same(edge.Start.X, area.X) && Same(edge.End.X, area.X)) ||
-        (Same(edge.Start.X, area.Right) && Same(edge.End.X, area.Right)) ||
-        (Same(edge.Start.Y, area.Y) && Same(edge.End.Y, area.Y)) ||
-        (Same(edge.Start.Y, area.Bottom) && Same(edge.End.Y, area.Bottom));
-
     private static bool Same(float actual, double expected) => MathF.Abs(actual - (float)expected) < 0.0001f;
     private static bool Same(float first, float second) => MathF.Abs(first - second) < 0.0001f;
 
@@ -445,4 +518,29 @@ public static class CardMeshGenerator
         triangles.Add(new Triangle(a, b, c));
         triangles.Add(new Triangle(a, c, d));
     }
+
+    private sealed class LimitedTriangleCollection(int maximumTriangles) : ICollection<Triangle>
+    {
+        private readonly List<Triangle> _items = [];
+
+        public IReadOnlyList<Triangle> Items => _items;
+        public int Count => _items.Count;
+        public bool IsReadOnly => false;
+
+        public void Add(Triangle item)
+        {
+            if (_items.Count >= maximumTriangles)
+                throw new GeometryLimitExceededException($"Generated mesh exceeds the configured triangle limit of {maximumTriangles:N0}. Simplify the artwork, caption, or bridges, or raise the limit.");
+            _items.Add(item);
+        }
+
+        public void Clear() => _items.Clear();
+        public bool Contains(Triangle item) => _items.Contains(item);
+        public void CopyTo(Triangle[] array, int arrayIndex) => _items.CopyTo(array, arrayIndex);
+        public bool Remove(Triangle item) => _items.Remove(item);
+        public IEnumerator<Triangle> GetEnumerator() => _items.GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    private sealed class GeometryLimitExceededException(string message) : InvalidOperationException(message);
 }

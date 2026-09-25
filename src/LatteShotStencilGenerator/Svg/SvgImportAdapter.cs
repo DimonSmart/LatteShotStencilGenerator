@@ -10,7 +10,10 @@ public readonly record struct SvgPoint(double X, double Y);
 
 public sealed record SvgContour(IReadOnlyList<SvgPoint> Points, SvgFillRule FillRule);
 
-public sealed record SvgImportResult(string SourceFileName, IReadOnlyList<SvgContour> Contours);
+public sealed record SvgImportResult(string SourceFileName, IReadOnlyList<SvgContour> Contours)
+{
+    public int FlattenedSegmentCount => Contours.Sum(contour => contour.Points.Count - 1);
+}
 
 public sealed record SvgImportError(string Message);
 
@@ -24,7 +27,7 @@ public sealed record SvgImportOutcome(SvgImportResult? Value, SvgImportError? Er
 /// <summary>Project-owned boundary for replaceable SVG readers.</summary>
 public interface ISvgImportAdapter
 {
-    SvgImportOutcome Import(string? sourceFileName, ReadOnlyMemory<byte> content);
+    SvgImportOutcome Import(string? sourceFileName, ReadOnlyMemory<byte> content, int maximumFlattenedSegments);
 }
 
 /// <summary>Reads the deliberately small, fill-only SVG subset used by the stencil engine.</summary>
@@ -36,11 +39,12 @@ public sealed class SvgImportAdapter : ISvgImportAdapter
     private static readonly HashSet<string> AllowedNames = ["svg", "g", "path", "rect", "circle", "ellipse", "polygon", "polyline", "title", "desc"];
     private const double Epsilon = 0.000001;
 
-    public SvgImportOutcome Import(string? sourceFileName, ReadOnlyMemory<byte> content)
+    public SvgImportOutcome Import(string? sourceFileName, ReadOnlyMemory<byte> content, int maximumFlattenedSegments)
     {
         if (string.IsNullOrWhiteSpace(sourceFileName)) return SvgImportOutcome.Failure("Select an SVG file to import.");
         if (content.IsEmpty) return SvgImportOutcome.Failure("The SVG file is empty.");
         if (content.Length > MaximumFileBytes) return SvgImportOutcome.Failure("SVG files must be 5 MB or smaller.");
+        if (maximumFlattenedSegments <= 0) return SvgImportOutcome.Failure("The flattened SVG segment limit must be a positive whole number.");
 
         XDocument document;
         try
@@ -65,7 +69,11 @@ public sealed class SvgImportAdapter : ISvgImportAdapter
 
         var contours = new List<SvgContour>();
         var sawStrokeOnly = false;
-        try { Visit(root, Matrix.Identity, SvgFillRule.NonZero, contours, ref sawStrokeOnly); }
+        try { Visit(root, Matrix.Identity, SvgFillRule.NonZero, contours, ref sawStrokeOnly, maximumFlattenedSegments); }
+        catch (SvgSegmentLimitExceededException)
+        {
+            return SvgImportOutcome.Failure($"SVG artwork exceeds the configured flattened segment limit of {maximumFlattenedSegments:N0}. Simplify the artwork or raise the limit.");
+        }
         catch (FormatException) { return SvgImportOutcome.Failure("The SVG contains malformed geometry or a malformed transform."); }
 
         if (contours.Count == 0 && sawStrokeOnly)
@@ -84,13 +92,13 @@ public sealed class SvgImportAdapter : ISvgImportAdapter
             a.Value.Contains("://", StringComparison.Ordinal));
     }
 
-    private static void Visit(XElement element, Matrix parent, SvgFillRule inheritedRule, List<SvgContour> output, ref bool sawStrokeOnly)
+    private static void Visit(XElement element, Matrix parent, SvgFillRule inheritedRule, List<SvgContour> output, ref bool sawStrokeOnly, int maximumFlattenedSegments)
     {
         var matrix = parent * ParseTransform((string?)element.Attribute("transform"));
         var fillRule = string.Equals((string?)element.Attribute("fill-rule"), "evenodd", StringComparison.OrdinalIgnoreCase) ? SvgFillRule.EvenOdd : inheritedRule;
         if (!ShapeNames.Contains(element.Name.LocalName))
         {
-            foreach (var child in element.Elements()) Visit(child, matrix, fillRule, output, ref sawStrokeOnly);
+            foreach (var child in element.Elements()) Visit(child, matrix, fillRule, output, ref sawStrokeOnly, maximumFlattenedSegments);
             return;
         }
         var fill = ((string?)element.Attribute("fill"))?.Trim();
@@ -104,9 +112,17 @@ public sealed class SvgImportAdapter : ISvgImportAdapter
         {
             if (element.Name.LocalName == "polyline" && !Same(contour[0], contour[^1])) continue;
             var normalized = Normalize(contour.Select(matrix.Apply).ToList());
-            if (normalized.Count >= 4 && Same(normalized[0], normalized[^1])) output.Add(new SvgContour(normalized, fillRule));
+            if (normalized.Count >= 4 && Same(normalized[0], normalized[^1]))
+            {
+                var segmentCount = normalized.Count - 1;
+                if (output.Sum(existing => existing.Points.Count - 1) + segmentCount > maximumFlattenedSegments)
+                    throw new SvgSegmentLimitExceededException();
+                output.Add(new SvgContour(normalized, fillRule));
+            }
         }
     }
+
+    private sealed class SvgSegmentLimitExceededException : Exception;
 
     private static List<List<SvgPoint>> ShapeContours(XElement element) => element.Name.LocalName switch
     {

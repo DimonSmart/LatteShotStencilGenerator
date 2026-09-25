@@ -1,4 +1,5 @@
 using System.Text;
+using LatteShotStencilGenerator.Geometry;
 using LatteShotStencilGenerator.Svg;
 using Xunit;
 
@@ -44,8 +45,8 @@ public sealed class SvgImportAdapterTests
     [Fact]
     public void Rejects_absent_and_oversized_input()
     {
-        Assert.False(_adapter.Import(null, ReadOnlyMemory<byte>.Empty).IsSuccess);
-        Assert.False(_adapter.Import("large.svg", new byte[SvgImportAdapter.MaximumFileBytes + 1]).IsSuccess);
+        Assert.False(_adapter.Import(null, ReadOnlyMemory<byte>.Empty, StencilPreset.ReferenceDonut.MaximumFlattenedSvgSegments).IsSuccess);
+        Assert.False(_adapter.Import("large.svg", new byte[SvgImportAdapter.MaximumFileBytes + 1], StencilPreset.ReferenceDonut.MaximumFlattenedSvgSegments).IsSuccess);
     }
 
     [Fact]
@@ -55,5 +56,5 @@ public sealed class SvgImportAdapterTests
         Assert.False(Import(svg).IsSuccess);
     }
 
-    private SvgImportOutcome Import(string svg) => _adapter.Import("art.svg", Encoding.UTF8.GetBytes(svg));
+    private SvgImportOutcome Import(string svg) => _adapter.Import("art.svg", Encoding.UTF8.GetBytes(svg), StencilPreset.ReferenceDonut.MaximumFlattenedSvgSegments);
 }
