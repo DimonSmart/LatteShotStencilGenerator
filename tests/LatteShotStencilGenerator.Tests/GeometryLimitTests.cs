@@ -43,7 +43,7 @@ public sealed class GeometryLimitTests
         Assert.Equal(3, state.ActivePreset.MaximumFlattenedSvgSegments);
         Assert.Equal(17, state.ActivePreset.MaximumMeshTriangles);
 
-        var workspace = new SvgUploadWorkspace(new SvgImportAdapter(), new BundledCaptionFontOutlineAdapter(), StencilPreset.ReferenceDonut);
+        var workspace = new SvgUploadWorkspace(new SvgImportAdapter(), new BundledCaptionFontOutlineAdapter(new ClipperPolygonEngine()), StencilPreset.ReferenceDonut);
         Assert.True(workspace.TryImport("square.svg", Encoding.UTF8.GetBytes("<svg><rect width='1' height='1'/></svg>")));
         workspace.ApplyPreset(state.ActivePreset);
 

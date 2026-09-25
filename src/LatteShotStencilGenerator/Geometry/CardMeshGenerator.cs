@@ -133,7 +133,7 @@ public static class CardMeshGenerator
         if (caption is null) return [];
 
         var tess = new Tess();
-        AddCaptionContours(tess, caption, reverse: false);
+        AddCanonicalRegions(tess, caption.Regions, reverse: false);
         var boundary = new Dictionary<(string First, string Second), (Vector3 Start, Vector3 End, int Count)>();
         foreach (var triangle in TessellateTop(tess, (float)caption.TopZ))
         {
@@ -153,7 +153,7 @@ public static class CardMeshGenerator
     {
         var tess = new Tess();
         tess.AddContour(ToVertices(Rectangle(topArea)));
-        AddCaptionContours(tess, caption, reverse: true);
+        AddCanonicalRegions(tess, caption.Regions, reverse: true);
         var boundary = new Dictionary<(string First, string Second), (Vector3 Start, Vector3 End, int Count)>();
         foreach (var triangle in TessellateTop(tess, z))
         {
@@ -314,12 +314,6 @@ public static class CardMeshGenerator
     private static string PointKey(Vector3 point) => $"{point.X:R},{point.Y:R}";
 
 
-    private static void AddCaptionContours(Tess tess, EmbossedCaption caption, bool reverse)
-    {
-        foreach (var contour in caption.Contours)
-            tess.AddContour(ToVertices(NormalizeWinding(contour, caption.Contours, reverse)));
-    }
-
     private static IEnumerable<Triangle> TessellateTop(Tess tess, float z)
     {
         tess.Tessellate(WindingRule.NonZero, ElementType.Polygons, 3);
@@ -400,7 +394,7 @@ public static class CardMeshGenerator
     {
         if (!geometry.IsExportable) return;
 
-        if (geometry.OpeningContours.Count == 0)
+        if (geometry.ResolvedTopology.OpeningRegions.Count == 0)
         {
             var w = geometry.WorkingArea;
             AddQuad(triangles, V((float)w.X, (float)w.Y, top), V((float)w.Right, (float)w.Y, top),
@@ -411,24 +405,10 @@ public static class CardMeshGenerator
         var tess = new Tess();
         tess.AddContour(ToVertices(Rectangle(geometry.WorkingArea)));
 
-        foreach (var contour in geometry.OpeningContours)
-        {
-            tess.AddContour(ToVertices(NormalizeWinding(contour, geometry.OpeningContours, reverse: true)));
-        }
+        AddCanonicalRegions(tess, geometry.ResolvedTopology.OpeningRegions, reverse: true);
 
-        foreach (var bridge in geometry.Bridges)
-            tess.AddContour(ToVertices(CounterClockwise(bridge.Contour.Points)));
-
-        tess.Tessellate(WindingRule.NonZero, ElementType.Polygons, 3);
-        for (var i = 0; i < tess.ElementCount; i++)
-        {
-            var element = tess.Elements[(i * 3)..((i + 1) * 3)];
-            if (element.Any(index => index == Tess.Undef)) continue;
-            var a = ToVector(tess.Vertices[element[0]].Position, top);
-            var b = ToVector(tess.Vertices[element[1]].Position, top);
-            var c = ToVector(tess.Vertices[element[2]].Position, top);
-            triangles.Add(new Triangle(a, b, c));
-        }
+        foreach (var triangle in TessellateTop(tess, top))
+            triangles.Add(triangle);
 
     }
 
@@ -437,10 +417,7 @@ public static class CardMeshGenerator
         var tess = new Tess();
         tess.AddContour(ToVertices(Rectangle(geometry.CardBoundary)));
 
-        foreach (var contour in geometry.OpeningContours)
-            tess.AddContour(ToVertices(NormalizeWinding(contour, geometry.OpeningContours, reverse: true)));
-        foreach (var bridge in geometry.Bridges)
-            tess.AddContour(ToVertices(CounterClockwise(bridge.Contour.Points)));
+        AddCanonicalRegions(tess, geometry.ResolvedTopology.OpeningRegions, reverse: true);
 
         var boundary = new Dictionary<(string First, string Second), (Vector3 Start, Vector3 End, int Count)>();
         foreach (var topTriangle in TessellateTop(tess, wallTop))
@@ -459,33 +436,14 @@ public static class CardMeshGenerator
     private static IEnumerable<PointMm> Rectangle(RectMm rectangle) =>
         [new(rectangle.X, rectangle.Y), new(rectangle.Right, rectangle.Y), new(rectangle.Right, rectangle.Bottom), new(rectangle.X, rectangle.Bottom)];
 
-    private static IEnumerable<PointMm> NormalizeWinding(StencilContour contour, IReadOnlyList<StencilContour> all, bool reverse)
+    private static void AddCanonicalRegions(Tess tess, IReadOnlyList<PlanarPolygon> polygons, bool reverse)
     {
-        var points = contour.Points.Take(contour.Points.Count - 1).ToArray();
-        var signedArea = Area(points);
-        var nested = all.Count(other => !ReferenceEquals(other, contour) && Contains(other.Points, points[0]));
-        var wantCounterClockwise = contour.FillRule == StencilFillRule.EvenOdd ? nested % 2 == 0 : signedArea > 0;
-        if (reverse) wantCounterClockwise = !wantCounterClockwise;
-        return (signedArea > 0) == wantCounterClockwise ? points : points.Reverse();
-    }
-
-    private static double Area(IReadOnlyList<PointMm> points) => points.Zip(points.Skip(1).Append(points[0]), (a, b) => a.X * b.Y - b.X * a.Y).Sum() / 2d;
-
-    private static IEnumerable<PointMm> CounterClockwise(IReadOnlyList<PointMm> closedPoints)
-    {
-        var points = closedPoints.Take(closedPoints.Count - 1).ToArray();
-        return Area(points) >= 0 ? points : points.Reverse();
-    }
-
-    private static bool Contains(IReadOnlyList<PointMm> polygon, PointMm point)
-    {
-        var inside = false;
-        for (var i = 0; i < polygon.Count - 1; i++)
+        foreach (var polygon in polygons)
         {
-            var a = polygon[i]; var b = polygon[i + 1];
-            if ((a.Y > point.Y) != (b.Y > point.Y) && point.X < (b.X - a.X) * (point.Y - a.Y) / (b.Y - a.Y) + a.X) inside = !inside;
+            tess.AddContour(ToVertices(reverse ? polygon.Outer.Reverse() : polygon.Outer));
+            foreach (var hole in polygon.Holes)
+                tess.AddContour(ToVertices(reverse ? hole.Reverse() : hole));
         }
-        return inside;
     }
 
     private static ContourVertex[] ToVertices(IEnumerable<PointMm> points) => points.Select(point => new ContourVertex { Position = new Vec3 { X = (float)point.X, Y = (float)point.Y, Z = 0 } }).ToArray();

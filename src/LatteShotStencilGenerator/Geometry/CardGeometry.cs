@@ -49,6 +49,9 @@ public sealed record CardGeometry(
         }
 
         var validation = ValidateArtwork(artwork, preset.WorkingArea);
+        var polygonEngine = new ClipperPolygonEngine();
+        if (validation is null)
+            artwork = new StencilArtwork(ToContours(polygonEngine.Normalize(artwork.Contours)), artwork.Invert);
         ResolvedStencilTopology topology;
         if (validation is not null)
         {
@@ -58,7 +61,7 @@ public sealed record CardGeometry(
         {
             try
             {
-                topology = StencilTopologyResolver.Resolve(artwork, preset.WorkingArea, bridgeConfiguration);
+                topology = StencilTopologyResolver.Resolve(artwork, preset.WorkingArea, bridgeConfiguration, polygonEngine);
             }
             catch (InvalidOperationException exception)
             {
@@ -90,4 +93,11 @@ public sealed record CardGeometry(
 
         return null;
     }
+
+    private static IReadOnlyList<StencilContour> ToContours(IReadOnlyList<PlanarPolygon> polygons) =>
+        polygons.SelectMany(polygon => new[] { ToContour(polygon.Outer) }
+            .Concat(polygon.Holes.Select(ToContour))).ToArray();
+
+    private static StencilContour ToContour(IReadOnlyList<PointMm> points) =>
+        new(points.Append(points[0]).ToArray(), StencilFillRule.NonZero);
 }

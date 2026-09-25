@@ -82,7 +82,7 @@ public sealed class StencilConfigurationStateTests
     [Fact]
     public void Applying_valid_configuration_refits_imported_artwork()
     {
-        var workspace = new SvgUploadWorkspace(new SvgImportAdapter(), new BundledCaptionFontOutlineAdapter(), StencilPreset.ReferenceDonut);
+        var workspace = new SvgUploadWorkspace(new SvgImportAdapter(), new BundledCaptionFontOutlineAdapter(new ClipperPolygonEngine()), StencilPreset.ReferenceDonut);
         Assert.True(workspace.TryImport("wide.svg", Encoding.UTF8.GetBytes("<svg><rect width='200' height='100'/></svg>")));
         var originalBounds = workspace.Placement!.PlacedBounds;
         var custom = StencilPreset.ReferenceDonut with

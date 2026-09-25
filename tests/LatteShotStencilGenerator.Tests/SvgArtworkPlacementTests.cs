@@ -57,7 +57,7 @@ public sealed class SvgArtworkPlacementTests
     [Fact]
     public void Workspace_retains_successful_import_and_reports_later_error()
     {
-        var workspace = new SvgUploadWorkspace(_adapter, new BundledCaptionFontOutlineAdapter(), Preset);
+        var workspace = new SvgUploadWorkspace(_adapter, new BundledCaptionFontOutlineAdapter(new ClipperPolygonEngine()), Preset);
 
         Assert.True(workspace.TryImport("leaf.svg", Encoding.UTF8.GetBytes("<svg><rect width='10' height='20'/></svg>")));
         Assert.Equal("LEAF", workspace.CaptionDefault);

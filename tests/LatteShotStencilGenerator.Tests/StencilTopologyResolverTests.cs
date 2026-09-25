@@ -124,6 +124,27 @@ public sealed class StencilTopologyResolverTests
         Assert.True(validation.IsValid, validation.Message);
     }
 
+    [Fact]
+    public void Overlapping_touching_and_nested_artwork_is_canonical_before_topology_and_mesh_generation()
+    {
+        var artwork = new StencilArtwork([
+            Rectangle(18, 45, 38, 65),
+            Rectangle(38, 45, 58, 65),
+            Rectangle(22, 49, 54, 81),
+            Rectangle(28, 55, 48, 75)
+        ]);
+
+        var geometry = CardGeometry.Create(Preset, artwork, Auto);
+        var repeated = CardGeometry.Create(Preset, artwork, Auto);
+
+        Assert.True(geometry.IsExportable, geometry.ValidationMessage);
+        Assert.All(geometry.Artwork.Contours, contour => Assert.Equal(StencilFillRule.NonZero, contour.FillRule));
+        Assert.NotEmpty(geometry.ResolvedTopology.OpeningRegions);
+        Assert.Equal(
+            geometry.ResolvedTopology.OpeningRegions.Select(RegionKey),
+            repeated.ResolvedTopology.OpeningRegions.Select(RegionKey));
+    }
+
     public static TheoryData<StencilArtwork, int> RepresentativeIslandArtwork() => new()
     {
         { Ring(), 1 },
@@ -143,6 +164,8 @@ public sealed class StencilTopologyResolverTests
         new([new(a.X, a.Y), new(b.X, b.Y), new(c.X, c.Y), new(a.X, a.Y)], StencilFillRule.EvenOdd);
 
     private static double Distance(PointMm a, PointMm b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
+
+    private static string RegionKey(PlanarPolygon region) => string.Join(";", region.Outer.Concat(region.Holes.SelectMany(hole => hole)));
 
     private sealed class PointSequenceComparer : IEqualityComparer<PointMm[]>
     {

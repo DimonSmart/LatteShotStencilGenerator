@@ -15,4 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/LatteShotStencilGenerator/LatteShotStencilGenerator.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="Fixtures/**/*.svg" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

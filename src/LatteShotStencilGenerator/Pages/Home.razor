@@ -71,10 +71,7 @@
             }
             @if (PreviewGeometry.Caption is not null)
             {
-                @foreach (var contour in PreviewGeometry.Caption.Contours)
-                {
-                    <polygon class="caption" points="@Points(contour.Points)" />
-                }
+                <path class="caption" d="@Path(PreviewGeometry.Caption.Regions)" fill-rule="nonzero" />
             }
         }
     </svg>
@@ -346,14 +343,13 @@
             return;
         }
 
-        CurrentGeometry = CardGeometry.Create(
-            Preset,
-            Workspace.Placement?.ToStencilArtwork(InvertStencil) ?? StencilArtwork.Empty,
-            Workspace.BridgeConfiguration,
-            Workspace.CreateCaptionGeometry());
-
         try
         {
+            CurrentGeometry = CardGeometry.Create(
+                Preset,
+                Workspace.Placement?.ToStencilArtwork(InvertStencil, Preset.GenerationResolutionMm, Preset.MaximumFlattenedSvgSegments) ?? StencilArtwork.Empty,
+                Workspace.BridgeConfiguration,
+                Workspace.CreateCaptionGeometry());
             var mesh = CardMeshGenerator.Generate(CurrentGeometry);
             CurrentValidation = MeshValidator.Validate(mesh);
             if (Workspace.ImportedArtwork is not null && Workspace.ImportError is null && CurrentValidation.IsValid)
@@ -361,6 +357,7 @@
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
+            CurrentGeometry = null;
             CurrentValidation = new MeshValidationResult(false,
                 $"Mesh generation failed: {exception.Message} Adjust the artwork placement, caption, or bridges.");
         }
@@ -494,6 +491,8 @@
     private static string Points(IReadOnlyList<PointMm> points) => string.Join(" ", points.Select(point => FormattableString.Invariant($"{point.X},{point.Y}")));
     private static string Path(IReadOnlyList<StencilContour> contours) => string.Join(" ", contours.Select(contour =>
         $"M {Points(contour.Points)} Z"));
+    private static string Path(IReadOnlyList<PlanarPolygon> regions) => string.Join(" ", regions.SelectMany(region =>
+        new[] { region.Outer }.Concat(region.Holes).Select(points => $"M {Points(points)} Z")));
 
     public async ValueTask DisposeAsync()
     {

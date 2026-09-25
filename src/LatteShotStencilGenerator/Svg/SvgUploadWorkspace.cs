@@ -64,9 +64,12 @@ public sealed class SvgUploadWorkspace
         if (ImportedArtwork is not null)
         {
             Placement = SvgArtworkPlacement.Fit(ImportedArtwork, preset.WorkingArea, preset.ArtworkPadding);
-            ImportError = ImportedArtwork.FlattenedSegmentCount > preset.MaximumFlattenedSvgSegments
-                ? $"SVG artwork has {ImportedArtwork.FlattenedSegmentCount:N0} flattened segments, exceeding the configured limit of {preset.MaximumFlattenedSvgSegments:N0}. Simplify the artwork or raise the limit."
-                : null;
+            try
+            {
+                _ = VectorFlattener.Flatten(Placement.Artwork.Artwork, preset.GenerationResolutionMm / 4d, preset.MaximumFlattenedSvgSegments);
+                ImportError = null;
+            }
+            catch (SvgFlattenLimitException exception) { ImportError = exception.Message; }
         }
     }
 

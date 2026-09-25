@@ -7,11 +7,15 @@ public sealed record ResolvedStencilTopology(
     IReadOnlyList<StencilBridge> Bridges,
     int DetectedIslandCount,
     int DetachedComponentCount,
-    IReadOnlyList<StencilMaterialComponent> RetainedMaterialComponents);
+    IReadOnlyList<StencilMaterialComponent> RetainedMaterialComponents)
+{
+    /// <summary>The canonical Clipper regions consumed by preview and meshing.</summary>
+    public IReadOnlyList<PlanarPolygon> OpeningRegions { get; init; } = [];
+}
 
 public sealed record StencilMaterialComponent(int IslandIndex, RectMm Bounds);
 
-/// <summary>Resolves retained-material connectivity without altering the supplied artwork contours.</summary>
+/// <summary>Resolves retained-material connectivity from canonical polygon regions.</summary>
 public static class StencilTopologyResolver
 {
     private const double Epsilon = 0.000001;
@@ -19,112 +23,83 @@ public static class StencilTopologyResolver
     public static ResolvedStencilTopology Resolve(
         StencilArtwork artwork,
         RectMm workingArea,
-        BridgeConfiguration configuration)
+        BridgeConfiguration configuration,
+        IPolygonEngine? polygonEngine = null)
     {
         ArgumentNullException.ThrowIfNull(artwork);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        if (artwork.Contours.Count == 0)
-            return new(artwork.Invert ? [RectangleContour(workingArea)] : [], [], 0, 0, []);
+        var engine = polygonEngine ?? new ClipperPolygonEngine();
+        var area = engine.Normalize([RectangleContour(workingArea)]);
+        var artworkRegions = engine.Normalize(artwork.Contours);
+        var openings = artwork.Invert
+            ? engine.Difference(area, artworkRegions)
+            : artworkRegions;
+        var material = engine.Difference(area, openings);
+        var islands = DetachedComponents(material, workingArea);
+        var detectedIslandCount = islands.Count;
 
-        var nodes = BuildNodes(artwork.Contours);
-        var openingContours = ResolveOpeningContours(artwork, workingArea, nodes);
-        var islands = nodes
-            .Where(node => IsMaterial(node.InsideWinding, artwork.Invert) &&
-                           !IsMaterial(node.OutsideWinding, artwork.Invert) &&
-                           !(node.Parent is null && TouchesBoundary(node.Contour, workingArea)))
-            .OrderBy(node => node.Depth)
-            .ThenBy(node => node.Index)
-            .ToArray();
-
-        if (configuration.Mode == BridgeMode.Off || islands.Length == 0)
-            return new(openingContours, [], islands.Length, islands.Length, ToMaterialComponents(islands));
+        if (configuration.Mode == BridgeMode.Off || islands.Count == 0)
+            return Result(openings, [], detectedIslandCount, islands, islands);
 
         var width = configuration.ResolvedWidthMm;
         if (width > workingArea.Width + Epsilon || width > workingArea.Height + Epsilon)
             throw new InvalidOperationException("The configured bridge width does not fit inside the working area.");
 
-        var bridges = new List<StencilBridge>(islands.Length);
-        foreach (var island in islands)
+        var bridges = new List<StencilBridge>(islands.Count);
+        var islandIndex = 0;
+        while (true)
         {
-            var openingBoundary = Ancestors(island)
-                .FirstOrDefault(node => !IsMaterial(node.InsideWinding, artwork.Invert) &&
-                                        IsMaterial(node.OutsideWinding, artwork.Invert));
-            var contour = openingBoundary is null
-                ? BridgeToWorkingArea(island.Contour, workingArea, width)
-                : BridgeBetween(island.Contour, openingBoundary.Contour, workingArea, width);
-            bridges.Add(new StencilBridge(contour, width, island.Index));
+            var remaining = DetachedComponents(material, workingArea);
+            if (remaining.Count == 0) break;
+            var bridgeContour = BridgeToWorkingArea(ToContour(remaining[0]), workingArea, width);
+            var bridge = engine.Normalize([bridgeContour]);
+            material = engine.Union(material, bridge);
+            bridges.Add(new StencilBridge(ToContour(bridge[0]), width, islandIndex++));
         }
-
-        return new(openingContours, bridges, islands.Length, 0, ToMaterialComponents(islands));
+        openings = engine.Difference(area, material);
+        var unresolved = DetachedComponents(material, workingArea);
+        if (unresolved.Count != 0)
+            throw new InvalidOperationException("Automatic bridge generation could not connect all retained material.");
+        return Result(openings, bridges, detectedIslandCount, unresolved, islands);
     }
 
-    private static IReadOnlyList<StencilMaterialComponent> ToMaterialComponents(IEnumerable<Node> islands) =>
-        islands.Select(island =>
+    private static ResolvedStencilTopology Result(
+        IReadOnlyList<PlanarPolygon> openings,
+        IReadOnlyList<StencilBridge> bridges,
+        int detectedIslandCount,
+        IReadOnlyList<PlanarPolygon> detached,
+        IReadOnlyList<PlanarPolygon> detected) => new(ToContours(openings), bridges, detectedIslandCount, detached.Count, ToMaterialComponents(detached))
+    {
+        RetainedMaterialComponents = ToMaterialComponents(detected),
+        OpeningRegions = openings
+    };
+
+    private static IReadOnlyList<PlanarPolygon> DetachedComponents(IReadOnlyList<PlanarPolygon> material, RectMm area) =>
+        material.Where(region => !TouchesBoundary(region, area)).ToArray();
+
+    private static bool TouchesBoundary(PlanarPolygon region, RectMm area) => region.Outer.Any(point =>
+        Math.Abs(point.X - area.X) <= Epsilon || Math.Abs(point.X - area.Right) <= Epsilon ||
+        Math.Abs(point.Y - area.Y) <= Epsilon || Math.Abs(point.Y - area.Bottom) <= Epsilon);
+
+    private static IReadOnlyList<StencilMaterialComponent> ToMaterialComponents(IEnumerable<PlanarPolygon> islands) =>
+        islands.Select((island, index) =>
         {
-            var bounds = Bounds(island.Contour.Points);
-            return new StencilMaterialComponent(
-                island.Index,
-                new RectMm(bounds.Left, bounds.Top, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top));
+            var bounds = Bounds(island.Outer);
+            return new StencilMaterialComponent(index, new RectMm(bounds.Left, bounds.Top, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top));
         }).ToArray();
 
-    private static IReadOnlyList<StencilContour> ResolveOpeningContours(StencilArtwork artwork, RectMm area, IReadOnlyList<Node> nodes)
-    {
-        var contours = new List<StencilContour>(nodes.Count + 1);
-        if (artwork.Invert) contours.Add(RectangleContour(area));
-        foreach (var node in nodes.OrderBy(node => node.Index))
-        {
-            var points = node.Contour.Points.Take(node.Contour.Points.Count - 1).ToArray();
-            var wantPositive = EffectiveWinding(node) > 0;
-            if (artwork.Invert) wantPositive = !wantPositive;
-            if ((Area(points) > 0) != wantPositive) Array.Reverse(points);
-            contours.Add(new StencilContour([.. points, points[0]], StencilFillRule.NonZero));
-        }
-        return contours;
-    }
+    private static IReadOnlyList<StencilContour> ToContours(IReadOnlyList<PlanarPolygon> polygons) =>
+        polygons.SelectMany(polygon => new[] { ToContour(polygon) }.Concat(polygon.Holes.Select(hole => ToContour(hole)))).ToArray();
+
+    private static StencilContour ToContour(PlanarPolygon polygon) => ToContour(polygon.Outer);
+
+    private static StencilContour ToContour(IReadOnlyList<PointMm> points) =>
+        new(points.Append(points[0]).ToArray(), StencilFillRule.NonZero);
 
     private static StencilContour RectangleContour(RectMm area) => new(
         [new(area.X, area.Y), new(area.Right, area.Y), new(area.Right, area.Bottom), new(area.X, area.Bottom), new(area.X, area.Y)],
         StencilFillRule.NonZero);
-
-    private static IReadOnlyList<Node> BuildNodes(IReadOnlyList<StencilContour> contours)
-    {
-        var nodes = contours.Select((contour, index) => new Node(index, contour, Math.Abs(Area(contour.Points)))).ToArray();
-        foreach (var node in nodes)
-        {
-            var sample = InteriorSample(node.Contour.Points);
-            node.Parent = nodes
-                .Where(candidate => candidate.Index != node.Index && candidate.AbsoluteArea > node.AbsoluteArea + Epsilon && Contains(candidate.Contour.Points, sample))
-                .OrderBy(candidate => candidate.AbsoluteArea)
-                .ThenBy(candidate => candidate.Index)
-                .FirstOrDefault();
-        }
-
-        foreach (var node in nodes)
-            node.Depth = Ancestors(node).Count();
-
-        foreach (var node in nodes)
-        {
-            node.OutsideWinding = Ancestors(node).Reverse().Sum(EffectiveWinding);
-            node.InsideWinding = node.OutsideWinding + EffectiveWinding(node);
-        }
-        return nodes;
-    }
-
-    private static IEnumerable<Node> Ancestors(Node node)
-    {
-        for (var parent = node.Parent; parent is not null; parent = parent.Parent)
-            yield return parent;
-    }
-
-    private static int EffectiveWinding(Node node)
-    {
-        if (node.Contour.FillRule == StencilFillRule.EvenOdd)
-            return node.Depth % 2 == 0 ? 1 : -1;
-        return Area(node.Contour.Points) >= 0 ? 1 : -1;
-    }
-
-    private static bool IsMaterial(int winding, bool invert) => invert ? winding != 0 : winding == 0;
 
     private static StencilContour BridgeToWorkingArea(StencilContour island, RectMm area, double width)
     {
@@ -153,27 +128,6 @@ public static class StencilTopologyResolver
             var end = new PointMm(x, selected.TowardMinimum ? area.Y : area.Bottom);
             return RectangleAround(start, end, width, area, extendStart: half, extendEnd: 0);
         }
-    }
-
-    private static StencilContour BridgeBetween(StencilContour island, StencilContour boundary, RectMm area, double width)
-    {
-        Candidate? best = null;
-        var islandPoints = island.Points.Take(island.Points.Count - 1).ToArray();
-        var boundaryPoints = boundary.Points;
-        for (var sourceIndex = 0; sourceIndex < islandPoints.Length; sourceIndex++)
-        for (var segmentIndex = 0; segmentIndex < boundaryPoints.Count - 1; segmentIndex++)
-        {
-            var target = ClosestPoint(islandPoints[sourceIndex], boundaryPoints[segmentIndex], boundaryPoints[segmentIndex + 1]);
-            var distance = SquaredDistance(islandPoints[sourceIndex], target);
-            var candidate = new Candidate(islandPoints[sourceIndex], target, distance, sourceIndex, segmentIndex);
-            if ((best is null || candidate.CompareTo(best.Value) < 0) &&
-                Fits(RectanglePoints(candidate.Source, candidate.Target, width, width / 2, width / 2), area))
-                best = candidate;
-        }
-
-        if (best is null)
-            throw new InvalidOperationException("No bridge of the configured width fits between a material island and its surrounding opening.");
-        return RectangleAround(best.Value.Source, best.Value.Target, width, area, width / 2, width / 2);
     }
 
     private static StencilContour RectangleAround(PointMm start, PointMm end, double width, RectMm area, double extendStart, double extendEnd)
@@ -209,51 +163,6 @@ public static class StencilTopologyResolver
         point.X >= area.X - Epsilon && point.X <= area.Right + Epsilon &&
         point.Y >= area.Y - Epsilon && point.Y <= area.Bottom + Epsilon);
 
-    private static bool TouchesBoundary(StencilContour contour, RectMm area) => contour.Points.Any(point =>
-        Math.Abs(point.X - area.X) <= Epsilon || Math.Abs(point.X - area.Right) <= Epsilon ||
-        Math.Abs(point.Y - area.Y) <= Epsilon || Math.Abs(point.Y - area.Bottom) <= Epsilon);
-
-    private static PointMm ClosestPoint(PointMm point, PointMm a, PointMm b)
-    {
-        var dx = b.X - a.X;
-        var dy = b.Y - a.Y;
-        var denominator = dx * dx + dy * dy;
-        var t = denominator <= Epsilon ? 0 : Math.Clamp(((point.X - a.X) * dx + (point.Y - a.Y) * dy) / denominator, 0, 1);
-        return new PointMm(a.X + t * dx, a.Y + t * dy);
-    }
-
-    private static PointMm InteriorSample(IReadOnlyList<PointMm> polygon)
-    {
-        var centroid = new PointMm(polygon.Take(polygon.Count - 1).Average(point => point.X), polygon.Take(polygon.Count - 1).Average(point => point.Y));
-        if (Contains(polygon, centroid)) return centroid;
-        var first = polygon[0];
-        return new PointMm(first.X * 0.999 + centroid.X * 0.001, first.Y * 0.999 + centroid.Y * 0.001);
-    }
-
-    private static bool Contains(IReadOnlyList<PointMm> polygon, PointMm point)
-    {
-        var inside = false;
-        for (var i = 0; i < polygon.Count - 1; i++)
-        {
-            var a = polygon[i];
-            var b = polygon[i + 1];
-            if ((a.Y > point.Y) != (b.Y > point.Y) && point.X < (b.X - a.X) * (point.Y - a.Y) / (b.Y - a.Y) + a.X)
-                inside = !inside;
-        }
-        return inside;
-    }
-
-    private static double Area(IReadOnlyList<PointMm> points)
-    {
-        var count = points.Count > 1 && points[0] == points[^1] ? points.Count - 1 : points.Count;
-        return Enumerable.Range(0, count)
-            .Select(index =>
-            {
-                var next = (index + 1) % count;
-                return points[index].X * points[next].Y - points[next].X * points[index].Y;
-            })
-            .Sum() / 2;
-    }
 
     private static (double Left, double Top, double Right, double Bottom) Bounds(IEnumerable<PointMm> points)
     {
@@ -261,27 +170,4 @@ public static class StencilTopologyResolver
         return (array.Min(point => point.X), array.Min(point => point.Y), array.Max(point => point.X), array.Max(point => point.Y));
     }
 
-    private static double SquaredDistance(PointMm a, PointMm b) => (a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y);
-
-    private sealed class Node(int index, StencilContour contour, double absoluteArea)
-    {
-        public int Index { get; } = index;
-        public StencilContour Contour { get; } = contour;
-        public double AbsoluteArea { get; } = absoluteArea;
-        public Node? Parent { get; set; }
-        public int Depth { get; set; }
-        public int OutsideWinding { get; set; }
-        public int InsideWinding { get; set; }
-    }
-
-    private readonly record struct Candidate(PointMm Source, PointMm Target, double Distance, int SourceIndex, int SegmentIndex) : IComparable<Candidate>
-    {
-        public int CompareTo(Candidate other)
-        {
-            var comparison = Distance.CompareTo(other.Distance);
-            if (comparison != 0) return comparison;
-            comparison = SourceIndex.CompareTo(other.SourceIndex);
-            return comparison != 0 ? comparison : SegmentIndex.CompareTo(other.SegmentIndex);
-        }
-    }
 }

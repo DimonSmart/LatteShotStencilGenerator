@@ -8,7 +8,7 @@ namespace LatteShotStencilGenerator.Tests;
 public sealed class EmbossedCaptionTests
 {
     private static readonly StencilPreset Preset = StencilPreset.ReferenceDonut;
-    private static readonly BundledCaptionFontOutlineAdapter Fonts = new();
+    private static readonly BundledCaptionFontOutlineAdapter Fonts = new(new ClipperPolygonEngine());
 
     [Fact]
     public void Import_defaults_caption_to_uppercase_filename_and_persists_font_selection()
@@ -39,7 +39,7 @@ public sealed class EmbossedCaptionTests
     public void Caption_is_centred_and_shrinks_to_caption_width()
     {
         var caption = Assert.IsType<EmbossedCaption>(EmbossedCaption.Create(Preset, new CaptionSettings(new string('A', 40), CaptionFont.Block), Fonts));
-        var points = caption.Contours.SelectMany(contour => contour.Points).ToArray();
+        var points = caption.Regions.SelectMany(RegionPoints).ToArray();
         var left = points.Min(point => point.X); var right = points.Max(point => point.X);
         var top = points.Min(point => point.Y); var bottom = points.Max(point => point.Y);
 
@@ -56,11 +56,49 @@ public sealed class EmbossedCaptionTests
         var first = Fonts.GetOutlines("DONUT", CaptionFont.Block);
         var second = Fonts.GetOutlines("DONUT", CaptionFont.Block);
 
-        Assert.NotEmpty(first.Contours);
-        Assert.All(first.Contours, contour => Assert.Equal(contour.Points[0], contour.Points[^1]));
+        Assert.NotEmpty(first.Regions);
+        Assert.All(first.Regions, region =>
+        {
+            Assert.True(Area(region.Outer) > 0);
+            Assert.All(region.Holes, hole => Assert.True(Area(hole) < 0));
+        });
         Assert.Equal(first.Width, second.Width);
         Assert.Equal(first.Height, second.Height);
-        Assert.Equal(first.Contours.SelectMany(contour => contour.Points), second.Contours.SelectMany(contour => contour.Points));
+        AssertRegionsEqual(first.Regions, second.Regions);
+    }
+
+    [Fact]
+    public void Font_adapter_returns_canonical_polygon_regions()
+    {
+        var polygons = new CaptionPolygonEngine();
+        var fonts = new BundledCaptionFontOutlineAdapter(polygons);
+
+        var outlines = fonts.GetOutlines("A", CaptionFont.Block);
+
+        Assert.Equal(1, polygons.NormalizeCalls);
+        var region = Assert.Single(outlines.Regions);
+        Assert.Equal(4, region.Outer.Count);
+        Assert.Equal(4, Assert.Single(region.Holes).Count);
+    }
+
+    [Fact]
+    public void Overlapping_and_touching_bundled_glyph_strokes_produce_deterministic_preview_mesh_and_stl_geometry()
+    {
+        var first = Assert.IsType<EmbossedCaption>(EmbossedCaption.Create(Preset, new CaptionSettings("8", CaptionFont.Block), Fonts));
+        var second = Assert.IsType<EmbossedCaption>(EmbossedCaption.Create(Preset, new CaptionSettings("8", CaptionFont.Block), Fonts));
+
+        AssertRegionsEqual(first.Regions, second.Regions);
+
+        var firstMesh = CardMeshGenerator.Generate(CardGeometry.Create(Preset, StencilArtwork.Empty, first));
+        var secondMesh = CardMeshGenerator.Generate(CardGeometry.Create(Preset, StencilArtwork.Empty, second));
+        var preview = MeshPreviewModel.Create(firstMesh);
+        var firstStl = BinaryStlSerializer.Serialize(firstMesh);
+        var secondStl = BinaryStlSerializer.Serialize(secondMesh);
+
+        Assert.True(MeshValidator.Validate(firstMesh).IsValid);
+        Assert.NotEmpty(preview.TriangleIndices);
+        Assert.Equal(firstMesh.Triangles, secondMesh.Triangles);
+        Assert.Equal(firstStl, secondStl);
     }
 
     [Fact]
@@ -90,23 +128,64 @@ public sealed class EmbossedCaptionTests
     [Fact]
     public void Nested_caption_contours_are_tessellated_as_watertight_relief()
     {
-        var outer = Contour((30, 8), (55, 8), (55, 26), (30, 26), StencilFillRule.EvenOdd);
-        var inner = Contour((36, 13), (49, 13), (49, 21), (36, 21), StencilFillRule.EvenOdd);
+        var outer = Points((30, 8), (55, 8), (55, 26), (30, 26));
+        var inner = Points((36, 13), (36, 21), (49, 21), (49, 13));
         var caption = new EmbossedCaption(
             new CaptionSettings("O", CaptionFont.Block),
-            [outer, inner],
+            [new PlanarPolygon(outer, [inner])],
             Preset.RaisedSurfaceZ + EmbossedCaption.EmbossHeight);
-        var mesh = CardMeshGenerator.Generate(CardGeometry.Create(Preset, StencilArtwork.Empty, caption));
+        var first = CardMeshGenerator.Generate(CardGeometry.Create(Preset, StencilArtwork.Empty, caption));
+        var second = CardMeshGenerator.Generate(CardGeometry.Create(Preset, StencilArtwork.Empty, caption));
 
-        var validation = MeshValidator.Validate(mesh);
+        var validation = MeshValidator.Validate(first);
         Assert.True(validation.IsValid, validation.Message);
+        Assert.Equal(first.Triangles, second.Triangles);
     }
 
-    private static StencilContour Contour(
+    private static IReadOnlyList<PointMm> Points(
         (double X, double Y) a,
         (double X, double Y) b,
         (double X, double Y) c,
-        (double X, double Y) d,
-        StencilFillRule fillRule) =>
-        new([new(a.X, a.Y), new(b.X, b.Y), new(c.X, c.Y), new(d.X, d.Y), new(a.X, a.Y)], fillRule);
+        (double X, double Y) d) =>
+        [new(a.X, a.Y), new(b.X, b.Y), new(c.X, c.Y), new(d.X, d.Y)];
+
+    private static IEnumerable<PointMm> RegionPoints(PlanarPolygon region) => region.Outer.Concat(region.Holes.SelectMany(hole => hole));
+
+    private static double Area(IReadOnlyList<PointMm> points) =>
+        points.Zip(points.Skip(1).Append(points[0]), (first, second) => first.X * second.Y - second.X * first.Y).Sum() / 2d;
+
+    private static void AssertRegionsEqual(IReadOnlyList<PlanarPolygon> expected, IReadOnlyList<PlanarPolygon> actual)
+    {
+        Assert.Equal(expected.Count, actual.Count);
+        for (var index = 0; index < expected.Count; index++)
+        {
+            Assert.Equal(expected[index].Outer, actual[index].Outer);
+            Assert.Equal(expected[index].Holes.Count, actual[index].Holes.Count);
+            for (var hole = 0; hole < expected[index].Holes.Count; hole++)
+                Assert.Equal(expected[index].Holes[hole], actual[index].Holes[hole]);
+        }
+    }
+
+    private sealed class CaptionPolygonEngine : IPolygonEngine
+    {
+        private static readonly IReadOnlyList<PlanarPolygon> Regions =
+        [
+            new PlanarPolygon(
+                [new(0, 0), new(4, 0), new(4, 4), new(0, 4)],
+                [[new(1, 1), new(1, 3), new(3, 3), new(3, 1)]])
+        ];
+
+        public int NormalizeCalls { get; private set; }
+
+        public IReadOnlyList<PlanarPolygon> Normalize(IReadOnlyList<StencilContour> contours)
+        {
+            NormalizeCalls++;
+            return Regions;
+        }
+
+        public IReadOnlyList<PlanarPolygon> Union(IReadOnlyList<PlanarPolygon> subject, IReadOnlyList<PlanarPolygon> clip) => throw new NotSupportedException();
+        public IReadOnlyList<PlanarPolygon> Difference(IReadOnlyList<PlanarPolygon> subject, IReadOnlyList<PlanarPolygon> clip) => throw new NotSupportedException();
+        public IReadOnlyList<PlanarPolygon> Intersection(IReadOnlyList<PlanarPolygon> subject, IReadOnlyList<PlanarPolygon> clip) => throw new NotSupportedException();
+        public IReadOnlyList<PlanarPolygon> Inflate(IReadOnlyList<PlanarPolygon> polygons, double deltaMm) => throw new NotSupportedException();
+    }
 }

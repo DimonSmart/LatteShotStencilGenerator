@@ -1,0 +1,10 @@
+<svg viewBox="0 0 100 100">
+  <g transform="translate(4 3)">
+    <g transform="scale(.9 1.1)">
+      <path fill-rule="evenodd" d="M10 10 H70 V70 H10 Z M25 25 H55 V55 H25 Z M35 35 H45 V45 H35 Z"/>
+      <path d="M75 20 H87 V32 H75 Z"/>
+      <path d="M87 20 H95 V32 H87 Z"/>
+      <path d="M80 27 H95 V42 H80 Z"/>
+    </g>
+  </g>
+</svg>
