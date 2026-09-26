@@ -9,16 +9,184 @@ export interface GeneratedStencil { readonly positions: Float32Array; readonly i
 type ManifoldApi = Awaited<ReturnType<typeof import('manifold-3d').default>>;
 type CrossSection = InstanceType<ManifoldApi['CrossSection']>;
 type Solid = InstanceType<ManifoldApi['Manifold']>;
+type SectionPolygons = ReturnType<CrossSection['toPolygons']>;
+type Direction = Bridge['direction'];
 
-const directions: readonly Bridge['direction'][] = ['left', 'right', 'up', 'down'];
+interface WorldWorkingBounds { readonly left: number; readonly right: number; readonly top: number; readonly bottom: number; }
+interface BridgeCandidate { readonly bridge: Bridge; readonly area: number; readonly span: number; readonly transverse: number; readonly patch: SectionPolygons; }
+interface ValidatedBridge { readonly cutterSection: CrossSection; readonly cutter: Solid; readonly result: Solid; }
 
-/** Deterministic candidate order: the nearest artwork edge, then left/right/up/down. */
-export function bridgeCandidates(bounds: readonly [number, number, number, number], artwork: WorkingRectangle, width: number): Bridge[] {
-  if (!Number.isFinite(width) || width < 0.8) throw new Error('Bridge width must be at least 0.8 mm.');
-  const [minX, minY, maxX, maxY] = bounds;
-  const x = (minX + maxX) / 2; const y = (minY + maxY) / 2;
-  const distances: Record<Bridge['direction'], number> = { left: x - artwork.x, right: artwork.x + artwork.width - x, up: y - artwork.y, down: artwork.y + artwork.height - y };
-  return [...directions].sort((a, b) => distances[a] - distances[b] || directions.indexOf(a) - directions.indexOf(b)).map((direction) => ({ x, y, width, direction }));
+const directions: readonly Direction[] = ['left', 'right', 'up', 'down'];
+const directionRank = (direction: Direction): number => directions.indexOf(direction);
+
+function worldWorkingBounds(rectangle: WorkingRectangle, template: TemplateGeometry): WorldWorkingBounds {
+  const left = template.bounds.min[0] + rectangle.x;
+  const right = left + rectangle.width;
+  const top = template.bounds.max[1] - rectangle.y;
+  const bottom = top - rectangle.height;
+  return { left, right, top, bottom };
+}
+
+function geometryTolerance(bounds: WorldWorkingBounds): number {
+  return Math.max(1, bounds.right - bounds.left, bounds.top - bounds.bottom) * 1e-8;
+}
+
+function orderBridgeDirections(targetBounds: ReturnType<CrossSection['bounds']>, work: WorldWorkingBounds): Direction[] {
+  const distances: Record<Direction, number> = {
+    left: targetBounds.min[0] - work.left,
+    right: work.right - targetBounds.max[0],
+    up: work.top - targetBounds.max[1],
+    down: targetBounds.min[1] - work.bottom,
+  };
+  return [...directions].sort((a, b) => distances[a] - distances[b] || directionRank(a) - directionRank(b));
+}
+
+function collectTransverseCandidates(targetSection: CrossSection, direction: Direction, work: WorldWorkingBounds, width: number): number[] {
+  const bounds = targetSection.bounds();
+  const horizontal = direction === 'left' || direction === 'right';
+  const values = [horizontal ? (bounds.min[1] + bounds.max[1]) / 2 : (bounds.min[0] + bounds.max[0]) / 2];
+  for (const polygon of targetSection.toPolygons()) {
+    for (let index = 0; index < polygon.length; index += 1) {
+      const point = polygon[index];
+      const next = polygon[(index + 1) % polygon.length];
+      values.push(horizontal ? point[1] : point[0]);
+      values.push(horizontal ? (point[1] + next[1]) / 2 : (point[0] + next[0]) / 2);
+    }
+  }
+  const tolerance = geometryTolerance(work);
+  const half = width / 2;
+  const min = horizontal ? work.bottom : work.left;
+  const max = horizontal ? work.top : work.right;
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  const unique: number[] = [];
+  for (const value of sorted) {
+    if (value - half < min - tolerance || value + half > max + tolerance) continue;
+    if (!unique.length || Math.abs(value - unique[unique.length - 1]) > tolerance) unique.push(value);
+  }
+  return unique;
+}
+
+function createProbe(CrossSectionCtor: ManifoldApi['CrossSection'], direction: Direction, transverse: number, width: number, work: WorldWorkingBounds): CrossSection {
+  const half = width / 2;
+  const polygon: Array<[number, number]> = direction === 'left' || direction === 'right'
+    ? [[work.left, transverse - half], [work.right, transverse - half], [work.right, transverse + half], [work.left, transverse + half]]
+    : [[transverse - half, work.bottom], [transverse + half, work.bottom], [transverse + half, work.top], [transverse - half, work.top]];
+  return new CrossSectionCtor([polygon], 'NonZero');
+}
+
+function firstContactCoordinate(targetContact: CrossSection, direction: Direction): number {
+  const bounds = targetContact.bounds();
+  if (direction === 'left') return bounds.min[0];
+  if (direction === 'right') return bounds.max[0];
+  if (direction === 'up') return bounds.max[1];
+  return bounds.min[1];
+}
+
+function transverseOverlap(a: ReturnType<CrossSection['bounds']>, b: ReturnType<CrossSection['bounds']>, direction: Direction): number {
+  return direction === 'left' || direction === 'right'
+    ? Math.min(a.max[1], b.max[1]) - Math.max(a.min[1], b.min[1])
+    : Math.min(a.max[0], b.max[0]) - Math.max(a.min[0], b.min[0]);
+}
+
+function distanceBeforeContact(bounds: ReturnType<CrossSection['bounds']>, direction: Direction, firstContact: number): number {
+  if (direction === 'left') return firstContact - bounds.max[0];
+  if (direction === 'right') return bounds.min[0] - firstContact;
+  if (direction === 'up') return bounds.min[1] - firstContact;
+  return firstContact - bounds.max[1];
+}
+
+function findAdjacentOpeningPart(parts: readonly CrossSection[], targetContact: CrossSection, direction: Direction, firstContact: number, tolerance: number): CrossSection | undefined {
+  const targetBounds = targetContact.bounds();
+  return parts
+    .map((part) => ({ part, bounds: part.bounds() }))
+    .map((item) => ({ ...item, distance: distanceBeforeContact(item.bounds, direction, firstContact) }))
+    .filter((item) => item.distance >= -tolerance && item.distance <= tolerance && transverseOverlap(item.bounds, targetBounds, direction) > tolerance)
+    .sort((a, b) => a.distance - b.distance || b.part.area() - a.part.area() || a.bounds.min[0] - b.bounds.min[0] || a.bounds.min[1] - b.bounds.min[1])[0]?.part;
+}
+
+function buildBridgeCandidate(CrossSectionCtor: ManifoldApi['CrossSection'], cutterSection: CrossSection, targetSection: CrossSection, direction: Direction, transverse: number, width: number, work: WorldWorkingBounds): BridgeCandidate | undefined {
+  let probe: CrossSection | undefined;
+  let targetContact: CrossSection | undefined;
+  let insideOpening: CrossSection | undefined;
+  let openingParts: CrossSection[] = [];
+  try {
+    probe = createProbe(CrossSectionCtor, direction, transverse, width, work);
+    targetContact = probe.intersect(targetSection);
+    if (targetContact.isEmpty()) return undefined;
+    const firstContact = firstContactCoordinate(targetContact, direction);
+    insideOpening = probe.intersect(cutterSection);
+    if (insideOpening.isEmpty()) return undefined;
+    openingParts = insideOpening.decompose();
+    const bridgePatch = findAdjacentOpeningPart(openingParts, targetContact, direction, firstContact, geometryTolerance(work));
+    if (!bridgePatch) return undefined;
+    const patchBounds = bridgePatch.bounds();
+    const span = direction === 'left' || direction === 'right'
+      ? patchBounds.max[0] - patchBounds.min[0]
+      : patchBounds.max[1] - patchBounds.min[1];
+    const area = bridgePatch.area();
+    if (!Number.isFinite(area) || area <= 0 || !Number.isFinite(span) || span <= 0) return undefined;
+    const bridge: Bridge = direction === 'left' || direction === 'right'
+      ? { x: firstContact, y: transverse, width, direction }
+      : { x: transverse, y: firstContact, width, direction };
+    return { bridge, area, span, transverse, patch: bridgePatch.toPolygons() };
+  } finally {
+    for (const part of openingParts) part.delete();
+    insideOpening?.delete();
+    targetContact?.delete();
+    probe?.delete();
+  }
+}
+
+function collectBridgeCandidates(CrossSectionCtor: ManifoldApi['CrossSection'], cutterSection: CrossSection, targetSection: CrossSection, width: number, work: WorldWorkingBounds): BridgeCandidate[] {
+  const candidates: BridgeCandidate[] = [];
+  for (const direction of orderBridgeDirections(targetSection.bounds(), work)) {
+    for (const transverse of collectTransverseCandidates(targetSection, direction, work, width)) {
+      const candidate = buildBridgeCandidate(CrossSectionCtor, cutterSection, targetSection, direction, transverse, width, work);
+      if (candidate) candidates.push(candidate);
+    }
+  }
+  return candidates.sort((a, b) =>
+    a.area - b.area
+    || a.span - b.span
+    || directionRank(a.bridge.direction) - directionRank(b.bridge.direction)
+    || a.transverse - b.transverse
+    || a.bridge.x - b.bridge.x
+    || a.bridge.y - b.bridge.y);
+}
+
+function extrudeSection(section: CrossSection, height: number, z0: number): Solid {
+  const extruded = section.extrude(height);
+  try { return extruded.translate([0, 0, z0]); }
+  finally { extruded.delete(); }
+}
+
+function validateBridgeCandidate(CrossSectionCtor: ManifoldApi['CrossSection'], base: Solid, cutterSection: CrossSection, candidate: BridgeCandidate, height: number, z0: number, currentPieceCount: number): ValidatedBridge | undefined {
+  const patch = new CrossSectionCtor(candidate.patch, 'NonZero');
+  let nextCutterSection: CrossSection | undefined;
+  let nextCutter: Solid | undefined;
+  let nextResult: Solid | undefined;
+  try {
+    nextCutterSection = cutterSection.subtract(patch);
+    nextCutter = extrudeSection(nextCutterSection, height, z0);
+    nextResult = base.subtract(nextCutter);
+    assertPrintable(nextResult);
+    const nextPieces = nextResult.decompose();
+    try {
+      if (nextPieces.length >= currentPieceCount) return undefined;
+    } finally {
+      for (const piece of nextPieces) piece.delete();
+    }
+    const validated = { cutterSection: nextCutterSection, cutter: nextCutter, result: nextResult };
+    nextCutterSection = undefined;
+    nextCutter = undefined;
+    nextResult = undefined;
+    return validated;
+  } finally {
+    nextResult?.delete();
+    nextCutter?.delete();
+    nextCutterSection?.delete();
+    patch.delete();
+  }
 }
 
 export function placedArtworkPolygons(artwork: PlanarArtwork, placement: ArtworkPlacement, template: TemplateGeometry): Array<Array<[number, number]>> {
@@ -28,22 +196,6 @@ export function placedArtworkPolygons(artwork: PlanarArtwork, placement: Artwork
   ]));
 }
 
-function rectangleForBridge(bridge: Bridge, artwork: WorkingRectangle, template: TemplateGeometry): Array<[number, number]> {
-  const { min } = template.bounds; const maxY = template.bounds.max[1];
-  const left = min[0] + artwork.x; const right = left + artwork.width;
-  const top = maxY - artwork.y; const bottom = top - artwork.height;
-  const half = bridge.width / 2;
-  if (bridge.direction === 'left') return [[left, bridge.y - half], [bridge.x, bridge.y - half], [bridge.x, bridge.y + half], [left, bridge.y + half]];
-  if (bridge.direction === 'right') return [[bridge.x, bridge.y - half], [right, bridge.y - half], [right, bridge.y + half], [bridge.x, bridge.y + half]];
-  if (bridge.direction === 'up') return [[bridge.x - half, bridge.y], [bridge.x + half, bridge.y], [bridge.x + half, top], [bridge.x - half, top]];
-  return [[bridge.x - half, bottom], [bridge.x + half, bottom], [bridge.x + half, bridge.y], [bridge.x - half, bridge.y]];
-}
-
-function solidBounds(solid: Solid): readonly [number, number, number, number] {
-  const bounds = solid.boundingBox();
-  return [bounds.min[0], bounds.min[1], bounds.max[0], bounds.max[1]];
-}
-
 function assertPrintable(solid: Solid): void {
   const mesh = solid.getMesh();
   if (solid.isEmpty() || solid.status() !== 'NoError' || !Number.isFinite(solid.volume()) || solid.volume() <= 0 || mesh.triVerts.length < 3 || !Array.from(mesh.vertProperties).every(Number.isFinite)) {
@@ -51,7 +203,7 @@ function assertPrintable(solid: Solid): void {
   }
 }
 
-/** Uses Manifold for every planar/solid boolean; bridges are kept by removing strips from the cutter. */
+/** Uses Manifold for every planar/solid boolean; bridges are kept by removing only the adjacent cutter component needed for each connection. */
 export interface CaptionSettings { readonly text: string; readonly font: BundledFontId; readonly x: number; readonly y: number; readonly size: number; readonly embossHeight: number; }
 
 function captionPolygons(template: TemplateGeometry, caption: CaptionSettings): Array<Array<[number, number]>> {
@@ -64,57 +216,103 @@ function captionPolygons(template: TemplateGeometry, caption: CaptionSettings): 
   return outline.contours.map((contour) => contour.map(([x, y]) => [template.bounds.min[0] + caption.x + x, template.bounds.max[1] - (caption.y + y)]));
 }
 
+function generatedMesh(result: Solid, bridges: readonly Bridge[]): GeneratedStencil {
+  const mesh = result.getMesh();
+  return { positions: new Float32Array(mesh.vertProperties), indices: new Uint32Array(mesh.triVerts), bridges };
+}
+
+function generatedMeshWithCaption(api: ManifoldApi, result: Solid, bridges: readonly Bridge[], template: TemplateGeometry, caption: CaptionSettings): GeneratedStencil {
+  const { CrossSection, Manifold } = api;
+  const section = new CrossSection(captionPolygons(template, caption), 'NonZero');
+  let raised: Solid | undefined;
+  let complete: Solid | undefined;
+  try {
+    if (section.isEmpty()) throw new Error('Caption does not produce printable closed glyph outlines.');
+    raised = extrudeSection(section, caption.embossHeight, template.bounds.max[2]);
+    complete = Manifold.union(result, raised);
+    assertPrintable(complete);
+    const completeMesh = complete.getMesh();
+    const captionMesh = raised.getMesh();
+    return {
+      positions: new Float32Array(completeMesh.vertProperties),
+      indices: new Uint32Array(completeMesh.triVerts),
+      bridges,
+      caption: { positions: new Float32Array(captionMesh.vertProperties), indices: new Uint32Array(captionMesh.triVerts) },
+    };
+  } finally {
+    complete?.delete();
+    raised?.delete();
+    section.delete();
+  }
+}
+
 export function generateStencil(api: ManifoldApi, template: TemplateGeometry, artwork: PlanarArtwork, placement: ArtworkPlacement, rectangle: WorkingRectangle, bridgeWidth: number, caption?: CaptionSettings): GeneratedStencil {
   if (!Number.isFinite(bridgeWidth) || bridgeWidth < 0.8) throw new Error('Minimum bridge width must be at least 0.8 mm.');
   const { Mesh, Manifold, CrossSection } = api;
   const templateMesh = new Mesh({ numProp: 3, vertProperties: template.positions, triVerts: template.indices });
   templateMesh.merge();
   const base = new Manifold(templateMesh);
-  const temporary: Array<{ delete(): void }> = [base];
+  let cutterSection: CrossSection | undefined;
+  let cutter: Solid | undefined;
+  let result: Solid | undefined;
   try {
     assertPrintable(base);
     const contours = placedArtworkPolygons(artwork, placement, template);
     const fillRule = artwork.contours.some((contour) => contour.fillRule === 'evenodd') ? 'EvenOdd' : 'NonZero';
-    const opening = new CrossSection(contours, fillRule); temporary.push(opening);
-    if (opening.isEmpty()) throw new Error('Artwork does not produce a valid filled opening.');
-    const z0 = template.bounds.min[2] - 1; const height = template.bounds.max[2] - template.bounds.min[2] + 2;
+    cutterSection = new CrossSection(contours, fillRule);
+    if (cutterSection.isEmpty()) throw new Error('Artwork does not produce a valid filled opening.');
+    const z0 = template.bounds.min[2] - 1;
+    const height = template.bounds.max[2] - template.bounds.min[2] + 2;
+    const work = worldWorkingBounds(rectangle, template);
     const bridges: Bridge[] = [];
-    let cutterSection = opening;
-    let cutter = opening.extrude(height).translate([0, 0, z0]); temporary.push(cutter);
-    let result = base.subtract(cutter); temporary.push(result);
+    cutter = extrudeSection(cutterSection, height, z0);
+    result = base.subtract(cutter);
+
     for (let attempt = 0; attempt < 32; attempt += 1) {
       assertPrintable(result);
-      const pieces = result.decompose(); temporary.push(...pieces);
-      if (pieces.length === 1) {
-        if (!caption?.text) {
-          const mesh = result.getMesh();
-          return { positions: new Float32Array(mesh.vertProperties), indices: new Uint32Array(mesh.triVerts), bridges };
+      const pieces = result.decompose();
+      try {
+        if (pieces.length === 1) {
+          if (!caption?.text) return generatedMesh(result, bridges);
+          return generatedMeshWithCaption(api, result, bridges, template, caption);
         }
-        const section = new CrossSection(captionPolygons(template, caption), 'NonZero'); temporary.push(section);
-        if (section.isEmpty()) throw new Error('Caption does not produce printable closed glyph outlines.');
-        const raised = section.extrude(caption.embossHeight).translate([0, 0, template.bounds.max[2]]); temporary.push(raised);
-        const complete = Manifold.union(result, raised); temporary.push(complete); assertPrintable(complete);
-        const completeMesh = complete.getMesh(); const captionMesh = raised.getMesh();
-        return { positions: new Float32Array(completeMesh.vertProperties), indices: new Uint32Array(completeMesh.triVerts), bridges, caption: { positions: new Float32Array(captionMesh.vertProperties), indices: new Uint32Array(captionMesh.triVerts) } };
-      }
-      // Keep the largest component as the template body; every other component needs a bridge.
-      pieces.sort((a, b) => b.volume() - a.volume());
-      let bridged = false;
-      for (const detached of pieces.slice(1)) {
-        for (const candidate of bridgeCandidates(solidBounds(detached), rectangle, bridgeWidth)) {
-          const strip = new CrossSection(rectangleForBridge(candidate, rectangle, template)); temporary.push(strip);
-          const insideOpening = strip.intersect(cutterSection); temporary.push(insideOpening);
-          if (insideOpening.isEmpty()) continue;
-          const nextCutterSection = cutterSection.subtract(insideOpening); temporary.push(nextCutterSection);
-          const nextCutter = nextCutterSection.extrude(height).translate([0, 0, z0]); temporary.push(nextCutter);
-          const nextResult = base.subtract(nextCutter); temporary.push(nextResult);
-          assertPrintable(nextResult);
-          if (nextResult.decompose().length < pieces.length) { bridges.push(candidate); cutterSection = nextCutterSection; cutter = nextCutter; result = nextResult; bridged = true; break; }
+
+        pieces.sort((a, b) => b.volume() - a.volume());
+        let bridged = false;
+        for (const detached of pieces.slice(1)) {
+          const targetSection = detached.project();
+          try {
+            for (const candidate of collectBridgeCandidates(CrossSection, cutterSection, targetSection, bridgeWidth, work)) {
+              const validated = validateBridgeCandidate(CrossSection, base, cutterSection, candidate, height, z0, pieces.length);
+              if (!validated) continue;
+              const previousSection = cutterSection;
+              const previousCutter = cutter;
+              const previousResult = result;
+              cutterSection = validated.cutterSection;
+              cutter = validated.cutter;
+              result = validated.result;
+              bridges.push(candidate.bridge);
+              previousResult.delete();
+              previousCutter.delete();
+              previousSection.delete();
+              bridged = true;
+              break;
+            }
+          } finally {
+            targetSection.delete();
+          }
+          if (bridged) break;
         }
-        if (bridged) break;
+        if (!bridged) throw new Error('Unable to create a manufacturable bridge inside the artwork area for a detached island.');
+      } finally {
+        for (const piece of pieces) piece.delete();
       }
-      if (!bridged) throw new Error('Unable to create a manufacturable bridge inside the artwork area for a detached island.');
     }
     throw new Error('Bridge generation did not converge on a connected printable stencil.');
-  } finally { for (const item of temporary.reverse()) item.delete(); }
+  } finally {
+    result?.delete();
+    cutter?.delete();
+    cutterSection?.delete();
+    base.delete();
+  }
 }
