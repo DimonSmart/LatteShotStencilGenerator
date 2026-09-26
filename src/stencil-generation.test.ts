@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import topologyContoursSvg from '../tests/LatteShotStencilGenerator.Tests/Fixtures/topology-contours.svg?raw';
 import { describe, expect, it } from 'vitest';
 import ManifoldModule from 'manifold-3d';
 import { containPlacement } from './artwork-placement';
@@ -138,8 +138,7 @@ describe('stencil generation', () => {
   it('preserves the nested hole in the topology-contours SVG through the real import and placement pipeline', async () => {
     const api = await ManifoldModule(); api.setup();
     installWorkerDomParser();
-    const source = readFileSync(new URL('../tests/LatteShotStencilGenerator.Tests/Fixtures/topology-contours.svg', import.meta.url), 'utf8');
-    const artwork = parseSvgArtwork(source);
+    const artwork = parseSvgArtwork(topologyContoursSvg);
     const fittedPlacement = containPlacement(artwork.bounds, rectangle);
     const result = generateStencil(api, template, artwork, fittedPlacement, rectangle, 0.8);
 
