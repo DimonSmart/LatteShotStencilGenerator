@@ -181,10 +181,10 @@ function bridgeContactDistance(a: BridgeCandidate, b: BridgeCandidate): number {
   return Math.hypot(a.bridge.x - b.bridge.x, a.bridge.y - b.bridge.y);
 }
 
-function selectBridgeCandidates(candidates: readonly BridgeCandidate[], requestedCount: number, width: number): BridgeCandidate[] {
+function selectBridgeCandidates(candidates: readonly BridgeCandidate[], seed: BridgeCandidate, requestedCount: number, width: number): BridgeCandidate[] {
   if (!candidates.length || requestedCount <= 0) return [];
-  const selected = [candidates[0]];
-  const remaining = candidates.slice(1);
+  const selected = [seed];
+  const remaining = candidates.filter((candidate) => candidate !== seed);
   const minimumSpacing = width * MIN_BRIDGE_CENTER_SPACING_FACTOR;
 
   while (selected.length < requestedCount && remaining.length) {
@@ -355,26 +355,46 @@ export function generateStencil(api: ManifoldApi, template: TemplateGeometry, ar
           const targetSection = detached.project();
           try {
             const candidates = collectBridgeCandidates(CrossSection, cutterSection, targetSection, bridgeWidth, work, bridgeCount);
-            const selected = selectBridgeCandidates(candidates, bridgeCount, bridgeWidth);
-            for (let selectedCount = selected.length; selectedCount >= 1; selectedCount -= 1) {
-              const acceptedCandidates = selected.slice(0, selectedCount);
-              const validated = validateBridgeCandidates(CrossSection, base, cutterSection, acceptedCandidates, height, z0, pieces.length);
+            let seed: BridgeCandidate | undefined;
+            let seedValidation: ValidatedBridge | undefined;
+            for (const candidate of candidates) {
+              const validated = validateBridgeCandidates(CrossSection, base, cutterSection, [candidate], height, z0, pieces.length);
               if (!validated) continue;
-
-              const previousSection = cutterSection;
-              const previousCutter = cutter;
-              const previousResult = result;
-              cutterSection = validated.cutterSection;
-              cutter = validated.cutter;
-              result = validated.result;
-              bridges.push(...acceptedCandidates.map((candidate) => candidate.bridge));
-              if (acceptedCandidates.length < bridgeCount) bridgeShortfallIslandCount += 1;
-              previousResult.delete();
-              previousCutter.delete();
-              previousSection.delete();
-              bridged = true;
+              seed = candidate;
+              seedValidation = validated;
               break;
             }
+            if (!seed || !seedValidation) continue;
+
+            let acceptedCandidates: readonly BridgeCandidate[] = [seed];
+            let acceptedValidation = seedValidation;
+            if (bridgeCount > 1) {
+              const selected = selectBridgeCandidates(candidates, seed, bridgeCount, bridgeWidth);
+              for (let selectedCount = selected.length; selectedCount >= 2; selectedCount -= 1) {
+                const group = selected.slice(0, selectedCount);
+                const validated = validateBridgeCandidates(CrossSection, base, cutterSection, group, height, z0, pieces.length);
+                if (!validated) continue;
+                seedValidation.result.delete();
+                seedValidation.cutter.delete();
+                seedValidation.cutterSection.delete();
+                acceptedCandidates = group;
+                acceptedValidation = validated;
+                break;
+              }
+            }
+
+            const previousSection = cutterSection;
+            const previousCutter = cutter;
+            const previousResult = result;
+            cutterSection = acceptedValidation.cutterSection;
+            cutter = acceptedValidation.cutter;
+            result = acceptedValidation.result;
+            bridges.push(...acceptedCandidates.map((candidate) => candidate.bridge));
+            if (acceptedCandidates.length < bridgeCount) bridgeShortfallIslandCount += 1;
+            previousResult.delete();
+            previousCutter.delete();
+            previousSection.delete();
+            bridged = true;
           } finally {
             targetSection.delete();
           }
