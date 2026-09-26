@@ -215,22 +215,19 @@ function extrudeSection(section: CrossSection, height: number, z0: number): Soli
 
 function validateBridgeCandidates(CrossSectionCtor: ManifoldApi['CrossSection'], base: Solid, cutterSection: CrossSection, candidates: readonly BridgeCandidate[], height: number, z0: number, currentPieceCount: number): ValidatedBridge | undefined {
   if (!candidates.length) return undefined;
+  const patches: CrossSection[] = [];
+  const intermediateSections: CrossSection[] = [];
   let workingSection = cutterSection;
-  let ownsWorkingSection = false;
   let nextCutter: Solid | undefined;
   let nextResult: Solid | undefined;
+  let keepFinalSection = false;
   try {
     for (const candidate of candidates) {
       const patch = new CrossSectionCtor(candidate.patch, 'NonZero');
-      let updatedSection: CrossSection;
-      try {
-        updatedSection = workingSection.subtract(patch);
-      } finally {
-        patch.delete();
-      }
-      if (ownsWorkingSection) workingSection.delete();
+      patches.push(patch);
+      const updatedSection = workingSection.subtract(patch);
+      intermediateSections.push(updatedSection);
       workingSection = updatedSection;
-      ownsWorkingSection = true;
     }
 
     nextCutter = extrudeSection(workingSection, height, z0);
@@ -243,15 +240,18 @@ function validateBridgeCandidates(CrossSectionCtor: ManifoldApi['CrossSection'],
       for (const piece of nextPieces) piece.delete();
     }
 
+    keepFinalSection = true;
     const validated = { cutterSection: workingSection, cutter: nextCutter, result: nextResult };
-    ownsWorkingSection = false;
     nextCutter = undefined;
     nextResult = undefined;
     return validated;
   } finally {
     nextResult?.delete();
     nextCutter?.delete();
-    if (ownsWorkingSection) workingSection.delete();
+    for (let index = 0; index < intermediateSections.length; index += 1) {
+      if (!keepFinalSection || index !== intermediateSections.length - 1) intermediateSections[index].delete();
+    }
+    for (const patch of patches) patch.delete();
   }
 }
 
