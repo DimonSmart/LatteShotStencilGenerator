@@ -2,7 +2,7 @@ import topologyContoursSvg from '../tests/LatteShotStencilGenerator.Tests/Fixtur
 import { describe, expect, it } from 'vitest';
 import ManifoldModule from 'manifold-3d';
 import { containPlacement } from './artwork-placement';
-import { generateStencil, placedArtworkPolygons, type GeneratedStencil } from './stencil-generation';
+import { generateStencil, MIN_BRIDGE_CENTER_SPACING_FACTOR, placedArtworkPolygons, type GeneratedStencil } from './stencil-generation';
 import { parseSvgArtwork, type PlanarArtwork } from './svg-artwork-adapter';
 import type { TemplateGeometry } from './template-geometry';
 import { installWorkerDomParser } from './worker-dom-parser';
@@ -23,6 +23,7 @@ const contour = (points: Array<readonly [number, number]>, hole = false) => ({ p
 const rectangleContour = (left: number, top: number, right: number, bottom: number, hole = false) => contour([[left, top], [right, top], [right, bottom], [left, bottom]], hole);
 const oneOpening: PlanarArtwork = { contours: [rectangleContour(3, 3, 17, 17)], bounds: { minX: 3, minY: 3, maxX: 17, maxY: 17 } };
 const ring: PlanarArtwork = { contours: [rectangleContour(3, 3, 17, 17), rectangleContour(7, 7, 13, 13, true)], bounds: { minX: 3, minY: 3, maxX: 17, maxY: 17 } };
+const smallRing: PlanarArtwork = { contours: [rectangleContour(3, 3, 17, 17), rectangleContour(9.5, 9.5, 10.5, 10.5, true)], bounds: { minX: 3, minY: 3, maxX: 17, maxY: 17 } };
 const twoRings: PlanarArtwork = { contours: [rectangleContour(2, 2, 9, 9), rectangleContour(4, 4, 7, 7, true), rectangleContour(11, 11, 18, 18), rectangleContour(13, 13, 16, 16, true)], bounds: { minX: 2, minY: 2, maxX: 18, maxY: 18 } };
 const nestedHole: PlanarArtwork = { contours: [rectangleContour(3, 3, 17, 17), rectangleContour(7, 7, 13, 13, true), rectangleContour(9, 9, 11, 11)], bounds: { minX: 3, minY: 3, maxX: 17, maxY: 17 } };
 const concaveIsland: PlanarArtwork = {
@@ -76,7 +77,7 @@ function expectArtworkRegionOpen(api: ManifoldApi, generated: GeneratedStencil, 
 describe('stencil generation', () => {
   it('uses no bridges for a normal opening and returns finite connected solid geometry', async () => {
     const api = await ManifoldModule(); api.setup();
-    const result = generateStencil(api, template, oneOpening, placement, rectangle, 0.8);
+    const result = generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 });
     expect(result.bridges).toEqual([]);
     expect(result.positions.every(Number.isFinite)).toBe(true);
     expect(result.indices.length).toBeGreaterThan(0);
@@ -85,8 +86,8 @@ describe('stencil generation', () => {
 
   it('connects an enclosed retained island with a deterministic minimum-width bridge', async () => {
     const api = await ManifoldModule(); api.setup();
-    const first = generateStencil(api, template, ring, placement, rectangle, 0.8);
-    const second = generateStencil(api, template, ring, placement, rectangle, 0.8);
+    const first = generateStencil(api, template, ring, placement, rectangle, { width: 0.8, count: 1 });
+    const second = generateStencil(api, template, ring, placement, rectangle, { width: 0.8, count: 1 });
     expect(first.bridges).toHaveLength(1);
     expect(first.bridges).toEqual(second.bridges);
     expect(first.bridges[0].width).toBe(0.8);
@@ -95,13 +96,13 @@ describe('stencil generation', () => {
 
   it('connects multiple retained islands and rejects invalid generation inputs without preserving a result', async () => {
     const api = await ManifoldModule(); api.setup();
-    expect(generateStencil(api, template, twoRings, placement, rectangle, 0.8).bridges).toHaveLength(2);
-    expect(() => generateStencil(api, template, ring, placement, rectangle, 0.2)).toThrow(/0.8/);
+    expect(generateStencil(api, template, twoRings, placement, rectangle, { width: 0.8, count: 1 }).bridges).toHaveLength(2);
+    expect(() => generateStencil(api, template, ring, placement, rectangle, { width: 0.2, count: 1 })).toThrow(/0.8/);
   });
 
   it('stops at the first retained-island contact and leaves a nested opening unchanged', async () => {
     const api = await ManifoldModule(); api.setup();
-    const result = generateStencil(api, template, nestedHole, placement, rectangle, 0.8);
+    const result = generateStencil(api, template, nestedHole, placement, rectangle, { width: 0.8, count: 1 });
     expect(result.bridges).toHaveLength(1);
     expect(result.bridges[0].direction).toBe('left');
     expect(result.bridges[0].x).toBeCloseTo(7, 6);
@@ -118,8 +119,8 @@ describe('stencil generation', () => {
     try { expect(centreIntersection.isEmpty()).toBe(true); }
     finally { centreIntersection.delete(); centreProbe.delete(); target.delete(); }
 
-    const first = generateStencil(api, template, concaveIsland, placement, rectangle, 0.8);
-    const second = generateStencil(api, template, concaveIsland, placement, rectangle, 0.8);
+    const first = generateStencil(api, template, concaveIsland, placement, rectangle, { width: 0.8, count: 1 });
+    const second = generateStencil(api, template, concaveIsland, placement, rectangle, { width: 0.8, count: 1 });
     expect(first.bridges.length).toBeGreaterThan(0);
     expect(first.bridges).toEqual(second.bridges);
     expectConnected(api, first);
@@ -127,7 +128,7 @@ describe('stencil generation', () => {
 
   it('restores only the opening immediately before a target when one probe crosses multiple openings', async () => {
     const api = await ManifoldModule(); api.setup();
-    const result = generateStencil(api, template, multipleOpenings, placement, rectangle, 0.8);
+    const result = generateStencil(api, template, multipleOpenings, placement, rectangle, { width: 0.8, count: 1 });
     expect(result.bridges).toHaveLength(2);
     expect(result.bridges[0].direction).toBe('left');
     expect(result.bridges[0].x).toBeCloseTo(10, 6);
@@ -140,7 +141,7 @@ describe('stencil generation', () => {
     installWorkerDomParser();
     const artwork = parseSvgArtwork(topologyContoursSvg);
     const fittedPlacement = containPlacement(artwork.bounds, rectangle);
-    const result = generateStencil(api, template, artwork, fittedPlacement, rectangle, 0.8);
+    const result = generateStencil(api, template, artwork, fittedPlacement, rectangle, { width: 0.8, count: 1 });
 
     expect(result.bridges.length).toBeGreaterThan(0);
     expectConnected(api, result);
@@ -148,10 +149,66 @@ describe('stencil generation', () => {
     expectArtworkRegionOpen(api, result, fittedPlacement, [40, 47], 0.5);
   });
 
+  it.each([1, 2, 3, 4, 5, 6, 7, 8])('creates %i spatially distributed supports for a sufficiently large island', async (count) => {
+    const api = await ManifoldModule(); api.setup();
+    const first = generateStencil(api, template, ring, placement, rectangle, { width: 0.8, count });
+    const second = generateStencil(api, template, ring, placement, rectangle, { width: 0.8, count });
+    expect(first.bridges).toHaveLength(count);
+    expect(first.bridges).toEqual(second.bridges);
+    expect(first.bridgeShortfallIslandCount).toBe(0);
+    for (let left = 0; left < first.bridges.length; left += 1) {
+      for (let right = left + 1; right < first.bridges.length; right += 1) {
+        const distance = Math.hypot(first.bridges[left].x - first.bridges[right].x, first.bridges[left].y - first.bridges[right].y);
+        expect(distance).toBeGreaterThanOrEqual(0.8 * MIN_BRIDGE_CENTER_SPACING_FACTOR - 1e-8);
+      }
+    }
+    expectConnected(api, first);
+  });
+
+  it('uses fewer supports without failing when an island cannot fit the requested count', async () => {
+    const api = await ManifoldModule(); api.setup();
+    const result = generateStencil(api, template, smallRing, placement, rectangle, { width: 0.8, count: 8 });
+    expect(result.bridges.length).toBeGreaterThanOrEqual(1);
+    expect(result.bridges.length).toBeLessThan(8);
+    expect(result.bridgeShortfallIslandCount).toBe(1);
+    expectConnected(api, result);
+  });
+
+  it('preserves a nested opening when several supports connect the surrounding retained island', async () => {
+    const api = await ManifoldModule(); api.setup();
+    const result = generateStencil(api, template, nestedHole, placement, rectangle, { width: 0.8, count: 4 });
+    expect(result.bridges).toHaveLength(4);
+    expectConnected(api, result);
+    expectArtworkRegionOpen(api, result, placement, [10, 10], 0.2);
+  });
+
+  it('uses bridgeCount per island rather than as a stencil-wide limit', async () => {
+    const api = await ManifoldModule(); api.setup();
+    const result = generateStencil(api, template, twoRings, placement, rectangle, { width: 0.8, count: 2 });
+    expect(result.bridges).toHaveLength(4);
+    expect(result.bridgeShortfallIslandCount).toBe(0);
+    expectConnected(api, result);
+  });
+
+  it('keeps multi-support placement deterministic for concave retained geometry', async () => {
+    const api = await ManifoldModule(); api.setup();
+    const first = generateStencil(api, template, concaveIsland, placement, rectangle, { width: 0.8, count: 4 });
+    const second = generateStencil(api, template, concaveIsland, placement, rectangle, { width: 0.8, count: 4 });
+    expect(first.bridges.length).toBeGreaterThan(1);
+    expect(first.bridges.length).toBeLessThanOrEqual(4);
+    expect(first.bridges).toEqual(second.bridges);
+    expectConnected(api, first);
+  });
+
+  it.each([0, 9, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])('rejects invalid bridgeCount %s', async (count) => {
+    const api = await ManifoldModule(); api.setup();
+    expect(() => generateStencil(api, template, ring, placement, rectangle, { width: 0.8, count })).toThrow(/integer between 1 and 8/i);
+  });
+
   it('omits empty captions and embosses valid closed glyph outlines onto the top surface', async () => {
     const api = await ManifoldModule(); api.setup();
-    const empty = generateStencil(api, template, oneOpening, placement, rectangle, 0.8, { text: '', font: 'stencil-block', x: 2, y: 2, size: 4, embossHeight: 0.35 });
-    const embossed = generateStencil(api, template, oneOpening, placement, rectangle, 0.8, { text: 'A', font: 'stencil-block', x: 2, y: 2, size: 4, embossHeight: 0.35 });
+    const empty = generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: '', font: 'stencil-block', x: 2, y: 2, size: 4, embossHeight: 0.35 });
+    const embossed = generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', x: 2, y: 2, size: 4, embossHeight: 0.35 });
     expect(empty.caption).toBeUndefined();
     expect(embossed.caption?.indices.length).toBeGreaterThan(0);
     expect(Math.max(...embossed.positions.filter((_, index) => index % 3 === 2))).toBeCloseTo(2.35, 4);
@@ -164,7 +221,7 @@ describe('stencil generation', () => {
 
   it('reports caption placements that cannot produce printable geometry', async () => {
     const api = await ManifoldModule(); api.setup();
-    expect(() => generateStencil(api, template, oneOpening, placement, rectangle, 0.8, { text: 'A', font: 'stencil-block', x: 30, y: 2, size: 4, embossHeight: 0.35 })).toThrow(/outside/i);
-    expect(() => generateStencil(api, template, oneOpening, placement, rectangle, 0.8, { text: 'A', font: 'stencil-block', x: 18, y: 2, size: 4, embossHeight: 0.35 })).toThrow(/fit completely/i);
+    expect(() => generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', x: 30, y: 2, size: 4, embossHeight: 0.35 })).toThrow(/outside/i);
+    expect(() => generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', x: 18, y: 2, size: 4, embossHeight: 0.35 })).toThrow(/fit completely/i);
   });
 });

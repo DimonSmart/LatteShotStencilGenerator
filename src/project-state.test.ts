@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { ProjectStore } from './project-state';
 
+describe('project settings', () => {
+  it('defaults to one support line per detached island', () => {
+    expect(new ProjectStore().snapshot.settings.bridgeCount).toBe(1);
+  });
+});
+
 describe('caption worker result protection', () => {
   it('never lets an older caption result replace a newer editable caption', () => {
     const store = new ProjectStore();

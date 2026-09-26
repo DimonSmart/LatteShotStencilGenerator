@@ -25,8 +25,10 @@ self.addEventListener('message', async (event: MessageEvent<WorkerRequest>) => {
     const { version, settings, template, artwork, placement, rectangle } = event.data;
     try {
       const api = await loadManifold(); api.setup();
-      const stencil = generateStencil(api, template, artwork, placement, rectangle, settings.bridgeWidth, { text: settings.caption, font: settings.captionFont, x: settings.captionX, y: settings.captionY, size: settings.captionSize, embossHeight: settings.captionEmbossHeight });
-      const result: StencilResult = { kind: 'stencil', version, isValid: true, message: `Generated printable stencil with ${stencil.bridges.length} automatic bridge${stencil.bridges.length === 1 ? '' : 's'}.`, stencil };
+      const stencil = generateStencil(api, template, artwork, placement, rectangle, { width: settings.bridgeWidth, count: settings.bridgeCount }, { text: settings.caption, font: settings.captionFont, x: settings.captionX, y: settings.captionY, size: settings.captionSize, embossHeight: settings.captionEmbossHeight });
+      const shortfallIslandCount = stencil.bridgeShortfallIslandCount ?? 0;
+      const shortfallMessage = shortfallIslandCount > 0 ? ` ${shortfallIslandCount} island${shortfallIslandCount === 1 ? '' : 's'} received fewer than the requested ${settings.bridgeCount} supports.` : '';
+      const result: StencilResult = { kind: 'stencil', version, isValid: true, message: `Generated printable stencil with ${stencil.bridges.length} automatic bridge${stencil.bridges.length === 1 ? '' : 's'}.${shortfallMessage}`, stencil };
       const transfers: Transferable[] = [stencil.positions.buffer, stencil.indices.buffer];
       if (stencil.caption) transfers.push(stencil.caption.positions.buffer, stencil.caption.indices.buffer);
       (self as unknown as { postMessage(message: unknown, transfer: Transferable[]): void }).postMessage({ type: 'result', result }, transfers);

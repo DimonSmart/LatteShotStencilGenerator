@@ -37,6 +37,7 @@ app.innerHTML = `
       </section>
       <section><h2>Bridges and materials</h2>
         <label>Minimum bridge width (mm) <input data-setting="bridgeWidth" type="number" min="0.8" step="0.1" value="0.8" /></label>
+        <label>Support lines per island <input data-setting="bridgeCount" type="number" min="1" max="8" step="1" value="1" /></label>
         <label>Base color <input data-setting="baseColor" type="color" value="#f4ede4" /></label>
         <label>Caption color <input data-setting="captionColor" type="color" value="#6a3a22" /></label>
       </section>
@@ -105,7 +106,7 @@ artworkInput.addEventListener('change', async () => {
 document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting]').forEach((input) => input.addEventListener('input', () => {
   const key = input.dataset.setting as keyof ProjectSettings;
   const value = input.type === 'number' ? Number(input.value) : input.value;
-  const regeneratesStencil = ['artworkLeft', 'artworkRight', 'artworkTop', 'artworkBottom', 'artworkX', 'artworkY', 'artworkScale', 'bridgeWidth', 'caption', 'captionFont', 'captionX', 'captionY', 'captionSize', 'captionEmbossHeight'].includes(key);
+  const regeneratesStencil = ['artworkLeft', 'artworkRight', 'artworkTop', 'artworkBottom', 'artworkX', 'artworkY', 'artworkScale', 'bridgeWidth', 'bridgeCount', 'caption', 'captionFont', 'captionX', 'captionY', 'captionSize', 'captionEmbossHeight'].includes(key);
   const state = artworkSource && regeneratesStencil
     ? store.update({ settings: { [key]: value }, stencil: undefined, processing: { stage: 'placement', message: 'Updating artwork placement in the geometry worker…' } })
     : store.update({ settings: { [key]: value } });

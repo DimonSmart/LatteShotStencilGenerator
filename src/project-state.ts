@@ -24,6 +24,7 @@ export interface ProjectSettings {
   captionSize: number;
   captionEmbossHeight: number;
   bridgeWidth: number;
+  bridgeCount: number;
   baseColor: string;
   captionColor: string;
 }
@@ -80,6 +81,7 @@ const initialSettings: ProjectSettings = {
   captionSize: 8,
   captionEmbossHeight: 0.35,
   bridgeWidth: 0.8,
+  bridgeCount: 1,
   baseColor: '#f4ede4',
   captionColor: '#6a3a22',
 };

@@ -4,7 +4,8 @@ import type { TemplateGeometry } from './template-geometry';
 import { captionOutline, type BundledFontId } from './font-outline-adapter';
 
 export interface Bridge { readonly x: number; readonly y: number; readonly width: number; readonly direction: 'left' | 'right' | 'up' | 'down'; }
-export interface GeneratedStencil { readonly positions: Float32Array; readonly indices: Uint32Array; readonly bridges: readonly Bridge[]; readonly caption?: { readonly positions: Float32Array; readonly indices: Uint32Array }; }
+export interface BridgeSettings { readonly width: number; readonly count: number; }
+export interface GeneratedStencil { readonly positions: Float32Array; readonly indices: Uint32Array; readonly bridges: readonly Bridge[]; readonly bridgeShortfallIslandCount?: number; readonly caption?: { readonly positions: Float32Array; readonly indices: Uint32Array }; }
 
 type ManifoldApi = Awaited<ReturnType<typeof import('manifold-3d').default>>;
 type CrossSection = InstanceType<ManifoldApi['CrossSection']>;
@@ -18,6 +19,9 @@ interface ValidatedBridge { readonly cutterSection: CrossSection; readonly cutte
 
 const directions: readonly Direction[] = ['left', 'right', 'up', 'down'];
 const directionRank = (direction: Direction): number => directions.indexOf(direction);
+export const MIN_BRIDGE_CENTER_SPACING_FACTOR = 1.5;
+const MAX_BRIDGE_COUNT = 8;
+const EXTRA_TRANSVERSE_SAMPLE_COUNT = MAX_BRIDGE_COUNT * 2 + 1;
 
 function worldWorkingBounds(rectangle: WorkingRectangle, template: TemplateGeometry): WorldWorkingBounds {
   const left = template.bounds.min[0] + rectangle.x;
@@ -41,7 +45,7 @@ function orderBridgeDirections(targetBounds: ReturnType<CrossSection['bounds']>,
   return [...directions].sort((a, b) => distances[a] - distances[b] || directionRank(a) - directionRank(b));
 }
 
-function collectTransverseCandidates(targetSection: CrossSection, direction: Direction, work: WorldWorkingBounds, width: number): number[] {
+function collectTransverseCandidates(targetSection: CrossSection, direction: Direction, work: WorldWorkingBounds, width: number, requestedCount: number): number[] {
   const bounds = targetSection.bounds();
   const horizontal = direction === 'left' || direction === 'right';
   const values = [horizontal ? (bounds.min[1] + bounds.max[1]) / 2 : (bounds.min[0] + bounds.max[0]) / 2];
@@ -53,8 +57,24 @@ function collectTransverseCandidates(targetSection: CrossSection, direction: Dir
       values.push(horizontal ? (point[1] + next[1]) / 2 : (point[0] + next[0]) / 2);
     }
   }
+
   const tolerance = geometryTolerance(work);
   const half = width / 2;
+  if (requestedCount > 1) {
+    const targetMin = horizontal ? bounds.min[1] : bounds.min[0];
+    const targetMax = horizontal ? bounds.max[1] : bounds.max[0];
+    const sampleMin = targetMin + half;
+    const sampleMax = targetMax - half;
+    if (sampleMax >= sampleMin - tolerance) {
+      if (Math.abs(sampleMax - sampleMin) <= tolerance) values.push((sampleMin + sampleMax) / 2);
+      else {
+        for (let index = 0; index < EXTRA_TRANSVERSE_SAMPLE_COUNT; index += 1) {
+          values.push(sampleMin + (sampleMax - sampleMin) * index / (EXTRA_TRANSVERSE_SAMPLE_COUNT - 1));
+        }
+      }
+    }
+  }
+
   const min = horizontal ? work.bottom : work.left;
   const max = horizontal ? work.top : work.right;
   const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
@@ -137,21 +157,54 @@ function buildBridgeCandidate(CrossSectionCtor: ManifoldApi['CrossSection'], cut
   }
 }
 
-function collectBridgeCandidates(CrossSectionCtor: ManifoldApi['CrossSection'], cutterSection: CrossSection, targetSection: CrossSection, width: number, work: WorldWorkingBounds): BridgeCandidate[] {
-  const candidates: BridgeCandidate[] = [];
-  for (const direction of orderBridgeDirections(targetSection.bounds(), work)) {
-    for (const transverse of collectTransverseCandidates(targetSection, direction, work, width)) {
-      const candidate = buildBridgeCandidate(CrossSectionCtor, cutterSection, targetSection, direction, transverse, width, work);
-      if (candidate) candidates.push(candidate);
-    }
-  }
-  return candidates.sort((a, b) =>
-    a.area - b.area
+function compareBridgeCandidates(a: BridgeCandidate, b: BridgeCandidate): number {
+  return a.area - b.area
     || a.span - b.span
     || directionRank(a.bridge.direction) - directionRank(b.bridge.direction)
     || a.transverse - b.transverse
     || a.bridge.x - b.bridge.x
-    || a.bridge.y - b.bridge.y);
+    || a.bridge.y - b.bridge.y;
+}
+
+function collectBridgeCandidates(CrossSectionCtor: ManifoldApi['CrossSection'], cutterSection: CrossSection, targetSection: CrossSection, width: number, work: WorldWorkingBounds, requestedCount: number): BridgeCandidate[] {
+  const candidates: BridgeCandidate[] = [];
+  for (const direction of orderBridgeDirections(targetSection.bounds(), work)) {
+    for (const transverse of collectTransverseCandidates(targetSection, direction, work, width, requestedCount)) {
+      const candidate = buildBridgeCandidate(CrossSectionCtor, cutterSection, targetSection, direction, transverse, width, work);
+      if (candidate) candidates.push(candidate);
+    }
+  }
+  return candidates.sort(compareBridgeCandidates);
+}
+
+function bridgeContactDistance(a: BridgeCandidate, b: BridgeCandidate): number {
+  return Math.hypot(a.bridge.x - b.bridge.x, a.bridge.y - b.bridge.y);
+}
+
+function selectBridgeCandidates(candidates: readonly BridgeCandidate[], requestedCount: number, width: number): BridgeCandidate[] {
+  if (!candidates.length || requestedCount <= 0) return [];
+  const selected = [candidates[0]];
+  const remaining = candidates.slice(1);
+  const minimumSpacing = width * MIN_BRIDGE_CENTER_SPACING_FACTOR;
+
+  while (selected.length < requestedCount && remaining.length) {
+    let bestIndex = -1;
+    let bestDistance = -Infinity;
+    for (let index = 0; index < remaining.length; index += 1) {
+      const candidate = remaining[index];
+      const minimumDistance = Math.min(...selected.map((existing) => bridgeContactDistance(candidate, existing)));
+      if (minimumDistance < minimumSpacing) continue;
+      if (minimumDistance > bestDistance || (minimumDistance === bestDistance && (bestIndex < 0 || compareBridgeCandidates(candidate, remaining[bestIndex]) < 0))) {
+        bestIndex = index;
+        bestDistance = minimumDistance;
+      }
+    }
+    if (bestIndex < 0) break;
+    selected.push(remaining[bestIndex]);
+    remaining.splice(bestIndex, 1);
+  }
+
+  return selected;
 }
 
 function extrudeSection(section: CrossSection, height: number, z0: number): Solid {
@@ -160,14 +213,27 @@ function extrudeSection(section: CrossSection, height: number, z0: number): Soli
   finally { extruded.delete(); }
 }
 
-function validateBridgeCandidate(CrossSectionCtor: ManifoldApi['CrossSection'], base: Solid, cutterSection: CrossSection, candidate: BridgeCandidate, height: number, z0: number, currentPieceCount: number): ValidatedBridge | undefined {
-  const patch = new CrossSectionCtor(candidate.patch, 'NonZero');
-  let nextCutterSection: CrossSection | undefined;
+function validateBridgeCandidates(CrossSectionCtor: ManifoldApi['CrossSection'], base: Solid, cutterSection: CrossSection, candidates: readonly BridgeCandidate[], height: number, z0: number, currentPieceCount: number): ValidatedBridge | undefined {
+  if (!candidates.length) return undefined;
+  let workingSection = cutterSection;
+  let ownsWorkingSection = false;
   let nextCutter: Solid | undefined;
   let nextResult: Solid | undefined;
   try {
-    nextCutterSection = cutterSection.subtract(patch);
-    nextCutter = extrudeSection(nextCutterSection, height, z0);
+    for (const candidate of candidates) {
+      const patch = new CrossSectionCtor(candidate.patch, 'NonZero');
+      let updatedSection: CrossSection;
+      try {
+        updatedSection = workingSection.subtract(patch);
+      } finally {
+        patch.delete();
+      }
+      if (ownsWorkingSection) workingSection.delete();
+      workingSection = updatedSection;
+      ownsWorkingSection = true;
+    }
+
+    nextCutter = extrudeSection(workingSection, height, z0);
     nextResult = base.subtract(nextCutter);
     assertPrintable(nextResult);
     const nextPieces = nextResult.decompose();
@@ -176,16 +242,16 @@ function validateBridgeCandidate(CrossSectionCtor: ManifoldApi['CrossSection'], 
     } finally {
       for (const piece of nextPieces) piece.delete();
     }
-    const validated = { cutterSection: nextCutterSection, cutter: nextCutter, result: nextResult };
-    nextCutterSection = undefined;
+
+    const validated = { cutterSection: workingSection, cutter: nextCutter, result: nextResult };
+    ownsWorkingSection = false;
     nextCutter = undefined;
     nextResult = undefined;
     return validated;
   } finally {
     nextResult?.delete();
     nextCutter?.delete();
-    nextCutterSection?.delete();
-    patch.delete();
+    if (ownsWorkingSection) workingSection.delete();
   }
 }
 
@@ -216,12 +282,12 @@ function captionPolygons(template: TemplateGeometry, caption: CaptionSettings): 
   return outline.contours.map((contour) => contour.map(([x, y]) => [template.bounds.min[0] + caption.x + x, template.bounds.max[1] - (caption.y + y)]));
 }
 
-function generatedMesh(result: Solid, bridges: readonly Bridge[]): GeneratedStencil {
+function generatedMesh(result: Solid, bridges: readonly Bridge[], bridgeShortfallIslandCount: number): GeneratedStencil {
   const mesh = result.getMesh();
-  return { positions: new Float32Array(mesh.vertProperties), indices: new Uint32Array(mesh.triVerts), bridges };
+  return { positions: new Float32Array(mesh.vertProperties), indices: new Uint32Array(mesh.triVerts), bridges, bridgeShortfallIslandCount };
 }
 
-function generatedMeshWithCaption(api: ManifoldApi, result: Solid, bridges: readonly Bridge[], template: TemplateGeometry, caption: CaptionSettings): GeneratedStencil {
+function generatedMeshWithCaption(api: ManifoldApi, result: Solid, bridges: readonly Bridge[], bridgeShortfallIslandCount: number, template: TemplateGeometry, caption: CaptionSettings): GeneratedStencil {
   const { CrossSection, Manifold } = api;
   const section = new CrossSection(captionPolygons(template, caption), 'NonZero');
   let raised: Solid | undefined;
@@ -237,6 +303,7 @@ function generatedMeshWithCaption(api: ManifoldApi, result: Solid, bridges: read
       positions: new Float32Array(completeMesh.vertProperties),
       indices: new Uint32Array(completeMesh.triVerts),
       bridges,
+      bridgeShortfallIslandCount,
       caption: { positions: new Float32Array(captionMesh.vertProperties), indices: new Uint32Array(captionMesh.triVerts) },
     };
   } finally {
@@ -246,8 +313,12 @@ function generatedMeshWithCaption(api: ManifoldApi, result: Solid, bridges: read
   }
 }
 
-export function generateStencil(api: ManifoldApi, template: TemplateGeometry, artwork: PlanarArtwork, placement: ArtworkPlacement, rectangle: WorkingRectangle, bridgeWidth: number, caption?: CaptionSettings): GeneratedStencil {
+export function generateStencil(api: ManifoldApi, template: TemplateGeometry, artwork: PlanarArtwork, placement: ArtworkPlacement, rectangle: WorkingRectangle, bridgeSettings: BridgeSettings, caption?: CaptionSettings): GeneratedStencil {
+  const bridgeWidth = bridgeSettings.width;
+  const bridgeCount = bridgeSettings.count;
   if (!Number.isFinite(bridgeWidth) || bridgeWidth < 0.8) throw new Error('Minimum bridge width must be at least 0.8 mm.');
+  if (!Number.isInteger(bridgeCount) || bridgeCount < 1 || bridgeCount > MAX_BRIDGE_COUNT) throw new Error('Bridge count must be an integer between 1 and 8.');
+
   const { Mesh, Manifold, CrossSection } = api;
   const templateMesh = new Mesh({ numProp: 3, vertProperties: template.positions, triVerts: template.indices });
   templateMesh.merge();
@@ -265,6 +336,7 @@ export function generateStencil(api: ManifoldApi, template: TemplateGeometry, ar
     const height = template.bounds.max[2] - template.bounds.min[2] + 2;
     const work = worldWorkingBounds(rectangle, template);
     const bridges: Bridge[] = [];
+    let bridgeShortfallIslandCount = 0;
     cutter = extrudeSection(cutterSection, height, z0);
     result = base.subtract(cutter);
 
@@ -273,8 +345,8 @@ export function generateStencil(api: ManifoldApi, template: TemplateGeometry, ar
       const pieces = result.decompose();
       try {
         if (pieces.length === 1) {
-          if (!caption?.text) return generatedMesh(result, bridges);
-          return generatedMeshWithCaption(api, result, bridges, template, caption);
+          if (!caption?.text) return generatedMesh(result, bridges, bridgeShortfallIslandCount);
+          return generatedMeshWithCaption(api, result, bridges, bridgeShortfallIslandCount, template, caption);
         }
 
         pieces.sort((a, b) => b.volume() - a.volume());
@@ -282,16 +354,21 @@ export function generateStencil(api: ManifoldApi, template: TemplateGeometry, ar
         for (const detached of pieces.slice(1)) {
           const targetSection = detached.project();
           try {
-            for (const candidate of collectBridgeCandidates(CrossSection, cutterSection, targetSection, bridgeWidth, work)) {
-              const validated = validateBridgeCandidate(CrossSection, base, cutterSection, candidate, height, z0, pieces.length);
+            const candidates = collectBridgeCandidates(CrossSection, cutterSection, targetSection, bridgeWidth, work, bridgeCount);
+            const selected = selectBridgeCandidates(candidates, bridgeCount, bridgeWidth);
+            for (let selectedCount = selected.length; selectedCount >= 1; selectedCount -= 1) {
+              const acceptedCandidates = selected.slice(0, selectedCount);
+              const validated = validateBridgeCandidates(CrossSection, base, cutterSection, acceptedCandidates, height, z0, pieces.length);
               if (!validated) continue;
+
               const previousSection = cutterSection;
               const previousCutter = cutter;
               const previousResult = result;
               cutterSection = validated.cutterSection;
               cutter = validated.cutter;
               result = validated.result;
-              bridges.push(candidate.bridge);
+              bridges.push(...acceptedCandidates.map((candidate) => candidate.bridge));
+              if (acceptedCandidates.length < bridgeCount) bridgeShortfallIslandCount += 1;
               previousResult.delete();
               previousCutter.delete();
               previousSection.delete();
