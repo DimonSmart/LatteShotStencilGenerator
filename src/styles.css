@@ -1,0 +1,14 @@
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #261b16; background: #eee6dc; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input { font: inherit; }
+header { min-height: 88px; padding: 18px 4vw; display: flex; justify-content: space-between; align-items: center; gap: 24px; background: #3d2119; color: #fff7ed; }
+h1, h2, p { margin: 0; } h1 { font-size: clamp(1.4rem, 3vw, 2rem); } h2 { font-size: 1rem; } .eyebrow { color: #f4b77f; font-size: .78rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 4px; }
+.workspace { min-height: calc(100vh - 88px); display: grid; grid-template-columns: minmax(290px, 360px) 1fr; }
+.controls { padding: 20px; overflow-y: auto; background: #fffaf5; border-right: 1px solid #d6c3b5; }
+.controls section { padding: 16px 0; border-bottom: 1px solid #eadbd0; } .controls section:first-child { padding-top: 0; }
+label { display: grid; gap: 5px; margin-top: 12px; font-size: .88rem; font-weight: 650; } input { width: 100%; min-height: 34px; padding: 5px 8px; border: 1px solid #bca999; border-radius: 5px; background: #fff; } input[type="color"] { padding: 2px; }
+small, .preview-hint, #export-note { display: block; margin-top: 7px; color: #725e52; font-size: .82rem; line-height: 1.4; }.status p { margin-top: 7px; line-height: 1.4; }
+.export-actions, .viewport-toolbar, .viewport-toolbar > div { display: flex; gap: 8px; }.export-actions { margin-top: 12px; } button { padding: 8px 11px; border: 1px solid #7f4d32; border-radius: 5px; background: #fffaf5; color: #4c2819; cursor: pointer; }button:hover:not(:disabled) { background: #f5e5d5; }button:disabled { opacity: .5; cursor: not-allowed; }
+.preview { min-width: 0; padding: 18px; display: flex; flex-direction: column; gap: 12px; }.viewport-toolbar { justify-content: space-between; align-items: center; }.viewport { min-height: 540px; flex: 1; border: 1px solid #5c4337; border-radius: 8px; overflow: hidden; }.viewport canvas { display: block; width: 100%; height: 100%; }
+@media (max-width: 800px) { header { align-items: flex-start; flex-direction: column; }.workspace { grid-template-columns: 1fr; }.controls { border-right: 0; }.viewport { min-height: 380px; } }

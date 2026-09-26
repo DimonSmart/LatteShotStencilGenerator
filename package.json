@@ -1,0 +1,27 @@
+{
+  "name": "latte-shot-stencil-generator",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "check:static": "node scripts/check-static-build.mjs",
+    "verify": "npm run test && npm run build && npm run check:static"
+  },
+  "dependencies": {
+    "@jscadui/3mf-export": "0.5.0",
+    "@xmldom/xmldom": "0.9.12",
+    "fflate": "0.8.2",
+    "manifold-3d": "3.5.4",
+    "opentype.js": "2.0.0",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0",
+    "typescript": "5.9.2",
+    "vite": "7.1.7",
+    "vitest": "^4.0.17"
+  }
+}

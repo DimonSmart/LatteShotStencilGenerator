@@ -1,0 +1,4 @@
+Stencil Block is a project-authored 5-by-7 display font.
+
+The font source in src/font-outline-adapter.ts is dedicated to the public domain.
+It may be used, copied, modified, and distributed without restriction.

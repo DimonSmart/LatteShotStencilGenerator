@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# IDD
+.idd/factory
+
 # Vite and build output
 dist/
 .vite/
