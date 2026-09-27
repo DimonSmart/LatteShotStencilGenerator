@@ -7,7 +7,13 @@ import { captionOrigin, type CaptionHorizontalAlignment, type CaptionRectangle, 
 
 export interface Bridge { readonly x: number; readonly y: number; readonly width: number; readonly direction: 'left' | 'right' | 'up' | 'down'; }
 export interface BridgeSettings { readonly width: number; readonly count: number; }
-export interface GeneratedStencil { readonly positions: Float32Array; readonly indices: Uint32Array; readonly bridges: readonly Bridge[]; readonly bridgeShortfallIslandCount?: number; readonly caption?: { readonly positions: Float32Array; readonly indices: Uint32Array }; }
+export interface MeshGeometry { readonly positions: Float32Array; readonly indices: Uint32Array; }
+export interface GeneratedStencil extends MeshGeometry {
+  readonly bridges: readonly Bridge[];
+  readonly bridgeShortfallIslandCount?: number;
+  readonly base?: MeshGeometry;
+  readonly caption?: MeshGeometry;
+}
 
 type ManifoldApi = Awaited<ReturnType<typeof import('manifold-3d').default>>;
 type CrossSection = InstanceType<ManifoldApi['CrossSection']>;
@@ -302,12 +308,14 @@ function generatedMeshWithCaption(api: ManifoldApi, result: Solid, bridges: read
     complete = Manifold.union(result, raised);
     assertPrintable(complete);
     const completeMesh = complete.getMesh();
+    const baseMesh = result.getMesh();
     const captionMesh = raised.getMesh();
     return {
       positions: new Float32Array(completeMesh.vertProperties),
       indices: new Uint32Array(completeMesh.triVerts),
       bridges,
       bridgeShortfallIslandCount,
+      base: { positions: new Float32Array(baseMesh.vertProperties), indices: new Uint32Array(baseMesh.triVerts) },
       caption: { positions: new Float32Array(captionMesh.vertProperties), indices: new Uint32Array(captionMesh.triVerts) },
     };
   } finally {

@@ -30,6 +30,7 @@ self.addEventListener('message', async (event: MessageEvent<WorkerRequest>) => {
       const shortfallMessage = shortfallIslandCount > 0 ? ` ${shortfallIslandCount} island${shortfallIslandCount === 1 ? '' : 's'} received fewer than the requested ${settings.bridgeCount} supports.` : '';
       const result: StencilResult = { kind: 'stencil', version, isValid: true, message: `Generated printable stencil with ${stencil.bridges.length} automatic bridge${stencil.bridges.length === 1 ? '' : 's'}.${shortfallMessage}`, stencil };
       const transfers: Transferable[] = [stencil.positions.buffer, stencil.indices.buffer];
+      if (stencil.base) transfers.push(stencil.base.positions.buffer, stencil.base.indices.buffer);
       if (stencil.caption) transfers.push(stencil.caption.positions.buffer, stencil.caption.indices.buffer);
       (self as unknown as { postMessage(message: unknown, transfer: Transferable[]): void }).postMessage({ type: 'result', result }, transfers);
     } catch (error) {

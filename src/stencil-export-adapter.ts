@@ -76,15 +76,21 @@ function triangleNormal(positions: Float32Array, triangle: Triangle): readonly [
 }
 
 function threeMf(stencil: GeneratedStencil, triangles: readonly Triangle[], baseColor: string, captionColor: string): Uint8Array {
-  const hasCaption = stencil.caption !== undefined;
-  const captionFloor = hasCaption ? minimumZ(stencil.caption!.positions) : Infinity;
-  const vertices = Array.from({ length: stencil.positions.length / 3 }, (_, index) => `<vertex x="${stencil.positions[index * 3]}" y="${stencil.positions[index * 3 + 1]}" z="${stencil.positions[index * 3 + 2]}"/>`).join('');
-  const triangleXml = triangles.map(({ a, b, c }) => {
-    const z = (stencil.positions[a * 3 + 2] + stencil.positions[b * 3 + 2] + stencil.positions[c * 3 + 2]) / 3;
-    return hasCaption && z > captionFloor + 1e-5 ? `<triangle v1="${a}" v2="${b}" v3="${c}" pid="1" p1="1"/>` : `<triangle v1="${a}" v2="${b}" v3="${c}"/>`;
-  }).join('');
-  const materials = hasCaption ? `<base name="Base" displaycolor="${baseColor}"/><base name="Caption" displaycolor="${captionColor}"/>` : `<base name="Base" displaycolor="${baseColor}"/>`;
-  const model = `<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><basematerials id="1">${materials}</basematerials><object id="2" type="model" pid="1" pindex="0"><mesh><vertices>${vertices}</vertices><triangles>${triangleXml}</triangles></mesh></object></resources><build><item objectid="2"/></build></model>`;
+  const hasCaptionParts = stencil.base !== undefined && stencil.caption !== undefined;
+  const materials = hasCaptionParts
+    ? `<base name="Base" displaycolor="${baseColor}"/><base name="Caption" displaycolor="${captionColor}"/>`
+    : `<base name="Base" displaycolor="${baseColor}"/>`;
+
+  const resources = hasCaptionParts
+    ? [
+      meshObject(2, 'Base', stencil.base!.positions, validatePrintableMesh(stencil.base!.positions, stencil.base!.indices), 0),
+      meshObject(3, 'Caption', stencil.caption!.positions, validatePrintableMesh(stencil.caption!.positions, stencil.caption!.indices), 1),
+      '<object id="4" type="model" name="Latte Shot Stencil"><components><component objectid="2"/><component objectid="3"/></components></object>',
+    ].join('')
+    : meshObject(2, 'Latte Shot Stencil', stencil.positions, triangles, 0);
+
+  const buildObjectId = hasCaptionParts ? 4 : 2;
+  const model = `<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><basematerials id="1">${materials}</basematerials>${resources}</resources><build><item objectid="${buildObjectId}"/></build></model>`;
   return zipSync({
     '[Content_Types].xml': strToU8('<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>'),
     '_rels/.rels': strToU8('<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>'),
@@ -92,10 +98,10 @@ function threeMf(stencil: GeneratedStencil, triangles: readonly Triangle[], base
   });
 }
 
-function minimumZ(positions: Float32Array): number {
-  let minimum = Infinity;
-  for (let index = 2; index < positions.length; index += 3) minimum = Math.min(minimum, positions[index]);
-  return minimum;
+function meshObject(id: number, name: string, positions: Float32Array, triangles: readonly Triangle[], materialIndex: number): string {
+  const vertices = Array.from({ length: positions.length / 3 }, (_, index) => `<vertex x="${positions[index * 3]}" y="${positions[index * 3 + 1]}" z="${positions[index * 3 + 2]}"/>`).join('');
+  const triangleXml = triangles.map(({ a, b, c }) => `<triangle v1="${a}" v2="${b}" v3="${c}"/>`).join('');
+  return `<object id="${id}" type="model" name="${name}" pid="1" pindex="${materialIndex}"><mesh><vertices>${vertices}</vertices><triangles>${triangleXml}</triangles></mesh></object>`;
 }
 
 function color(value: string, region: string): string {

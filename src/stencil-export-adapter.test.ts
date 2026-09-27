@@ -27,14 +27,27 @@ describe('stencil export adapter', () => {
     expect(model).not.toContain('name="Caption"');
   });
 
-  it('assigns a distinct standard material region to raised caption triangles', () => {
-    const caption = { positions: new Float32Array([0, 0, 2, 1, 0, 2, 0, 1, 2, 0, 0, 2.35, 1, 0, 2.35, 0, 1, 2.35]), indices: new Uint32Array([0, 1, 2, 3, 5, 4]) };
-    const raisedPositions = new Float32Array([...cube, 0, 0, 2, 1, 0, 2, 0, 1, 2, 0, 0, 2.35]);
-    const raisedTriangles = new Uint32Array([...cubeTriangles, 8, 10, 9, 8, 9, 11, 9, 10, 11, 10, 8, 11]);
-    const raisedStencil: GeneratedStencil = { positions: raisedPositions, indices: raisedTriangles, bridges: [], caption };
+  it('exports base and caption as distinct material-assigned 3MF parts', () => {
+    const captionPositions = new Float32Array([
+      0.5, 0.5, 2, 1.5, 0.5, 2, 1.5, 1.5, 2, 0.5, 1.5, 2,
+      0.5, 0.5, 2.35, 1.5, 0.5, 2.35, 1.5, 1.5, 2.35, 0.5, 1.5, 2.35,
+    ]);
+    const captionIndices = new Uint32Array([0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7]);
+    const raisedStencil: GeneratedStencil = {
+      positions: cube,
+      indices: cubeTriangles,
+      bridges: [],
+      base: { positions: cube, indices: cubeTriangles },
+      caption: { positions: captionPositions, indices: captionIndices },
+    };
     const model = strFromU8(unzipSync(serializeStencil({ stencil: raisedStencil, baseColor: '#f4ede4', captionColor: '#6a3a22' }, '3mf'))['3D/3dmodel.model']);
+    expect(model).toContain('name="Base" displaycolor="#F4EDE4FF"');
     expect(model).toContain('name="Caption" displaycolor="#6A3A22FF"');
-    expect(model).toContain('pid="1" p1="1"');
+    expect(model).toContain('<object id="2" type="model" name="Base" pid="1" pindex="0">');
+    expect(model).toContain('<object id="3" type="model" name="Caption" pid="1" pindex="1">');
+    expect(model).toContain('<object id="4" type="model" name="Latte Shot Stencil"><components><component objectid="2"/><component objectid="3"/></components></object>');
+    expect(model).toContain('<build><item objectid="4"/></build>');
+    expect(model).not.toContain('p1="1"');
   });
 
   it('rejects non-watertight geometry before either format is offered', () => {

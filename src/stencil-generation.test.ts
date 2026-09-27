@@ -227,7 +227,9 @@ describe('stencil generation', () => {
     const empty = generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: '', font: 'stencil-block', horizontalAlignment: 'left', verticalAlignment: 'top', rectangle: { left: 2, top: 2, right: 18, bottom: 18 }, size: 4, embossHeight: 0.35 });
     const embossed = generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', horizontalAlignment: 'left', verticalAlignment: 'top', rectangle: { left: 2, top: 2, right: 18, bottom: 18 }, size: 4, embossHeight: 0.35 });
     expect(empty.caption).toBeUndefined();
+    expect(embossed.base?.indices.length).toBeGreaterThan(0);
     expect(embossed.caption?.indices.length).toBeGreaterThan(0);
+    expect(Math.max(...embossed.base!.positions.filter((_, index) => index % 3 === 2))).toBeCloseTo(2, 4);
     expect(Math.max(...embossed.positions.filter((_, index) => index % 3 === 2))).toBeCloseTo(2.35, 4);
     const captionPositions = embossed.caption!.positions;
     const xs = captionPositions.filter((_, index) => index % 3 === 0);
