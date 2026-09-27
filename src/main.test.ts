@@ -32,6 +32,13 @@ describe('caption controls', () => {
     expect(mainSource).toContain('bundledFonts.map');
     expect(mainSource).toContain('captionFontOptions');
   });
+
+  it('shows caption validation next to the field and retains only the last valid preview', () => {
+    expect(mainSource).toContain('id="caption-error"');
+    expect(mainSource).toContain('lastValidStencil');
+    expect(mainSource).toContain("previewPanel.classList.toggle('is-stale', showingLastValid)");
+    expect(mainSource).toContain('Preview shows the last valid result; fix the error before export.');
+  });
 });
 
 describe('workspace layout', () => {

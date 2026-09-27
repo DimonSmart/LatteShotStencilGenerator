@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { installWorkerDomParser } from './worker-dom-parser';
 import { parseSvgArtwork, svgArtworkLimits, validateSvgSource } from './svg-artwork-adapter';
 
@@ -15,6 +15,18 @@ describe('SVG artwork import guardrails', () => {
     installWorkerDomParser();
     const artwork = parseSvgArtwork('<svg xmlns="http://www.w3.org/2000/svg"><path fill="black" d="M0 0H10V10Z"/></svg>');
     expect(artwork.contours).toHaveLength(1);
+  });
+
+  it('uses ShapePath.toShapes without the deprecated SVGLoader.createShapes warning', () => {
+    installWorkerDomParser();
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const artwork = parseSvgArtwork('<svg xmlns="http://www.w3.org/2000/svg"><path fill="black" d="M0 0H10V10H0Z"/></svg>');
+      expect(artwork.contours).toHaveLength(1);
+      expect(warning.mock.calls.flat().join(' ')).not.toMatch(/createShapes.*deprecated/i);
+    } finally {
+      warning.mockRestore();
+    }
   });
 
   it('rejects active and network-backed SVG constructs', () => {

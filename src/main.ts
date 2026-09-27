@@ -58,6 +58,7 @@ app.innerHTML = `
           </fieldset>
           <label>Size (mm) <input data-setting="captionSize" type="number" min="1" step="0.5" value="8" /></label>
         </div>
+        <p id="caption-error" class="field-error" role="alert" hidden></p>
       </section>
 
       <details id="advanced-placement" class="panel accordion">
@@ -116,7 +117,7 @@ app.innerHTML = `
         </div>
       </div>
       <div id="viewport" class="viewport" role="img" aria-label="Interactive 3D stencil preview"></div>
-      <p class="preview-hint">Quick visual check</p>
+      <p id="preview-hint" class="preview-hint">Quick visual check</p>
     </section>
   </section>`;
 
@@ -134,10 +135,14 @@ const viewport = new StencilViewport(document.querySelector<HTMLElement>('#viewp
 const previewPanel = document.querySelector<HTMLElement>('#preview-panel')!;
 const expandPreviewButton = document.querySelector<HTMLButtonElement>('#expand-preview')!;
 const processingState = document.querySelector<HTMLElement>('#processing-state')!;
+const captionInput = document.querySelector<HTMLInputElement>('[data-setting="caption"]')!;
+const captionError = document.querySelector<HTMLElement>('#caption-error')!;
+const previewHint = document.querySelector<HTMLElement>('#preview-hint')!;
 const status = document.querySelector<HTMLElement>('#status')!;
 const exportNote = document.querySelector<HTMLElement>('#export-note')!;
 let renderedTemplate: ProjectState['geometry'] | undefined;
 let renderedStencil: ProjectState['stencil'] | undefined;
+let lastValidStencil: ProjectState['stencil'] | undefined;
 let renderedBaseColor = '';
 let renderedCaptionColor = '';
 let exportInProgress = false;
@@ -150,15 +155,29 @@ store.subscribe((state) => {
   const canExport = state.stencil?.isValid === true && !exportInProgress;
   document.querySelectorAll<HTMLButtonElement>('#export-stl, #export-3mf').forEach((button) => { button.disabled = !canExport; });
   exportNote.textContent = canExport ? 'Printable stencil geometry is valid.' : 'Export is available once the generated stencil is valid.';
-  if (renderedStencil !== state.stencil || renderedBaseColor !== state.settings.baseColor || renderedCaptionColor !== state.settings.captionColor || (state.stencil?.isValid !== true && renderedTemplate !== state.geometry)) {
+
+  if (state.stencil?.isValid) lastValidStencil = state.stencil;
+  const stencilFailed = state.stencil?.isValid === false;
+  const previewStencil = stencilFailed && lastValidStencil ? lastValidStencil : state.stencil;
+  const showingLastValid = stencilFailed && previewStencil === lastValidStencil && lastValidStencil?.isValid === true;
+  const captionFailure = stencilFailed && /caption/i.test(state.processing.message)
+    ? state.processing.message.replace(/^Stencil generation failed:\s*/i, '')
+    : '';
+  captionError.textContent = captionFailure;
+  captionError.hidden = !captionFailure;
+  captionInput.setAttribute('aria-invalid', String(Boolean(captionFailure)));
+  previewPanel.classList.toggle('is-stale', showingLastValid);
+  previewHint.textContent = showingLastValid ? 'Preview shows the last valid result; fix the error before export.' : 'Quick visual check';
+
+  if (renderedStencil !== previewStencil || renderedBaseColor !== state.settings.baseColor || renderedCaptionColor !== state.settings.captionColor || (!previewStencil?.isValid && renderedTemplate !== state.geometry)) {
     renderedTemplate = state.geometry;
-    renderedStencil = state.stencil;
+    renderedStencil = previewStencil;
     renderedBaseColor = state.settings.baseColor;
     renderedCaptionColor = state.settings.captionColor;
-    const generated = state.stencil?.stencil;
+    const generated = previewStencil?.isValid ? previewStencil.stencil : undefined;
     viewport.setTemplate(generated ?? (state.geometry?.isValid ? state.geometry.template : undefined), state.settings.baseColor, generated?.caption, state.settings.captionColor);
   }
-  viewport.setArtwork(state.geometry?.template, state.artwork?.isValid ? state.artwork : undefined, state.stencil?.isValid ? state.stencil.stencil : undefined, state.settings.baseColor, state.settings.captionColor);
+  viewport.setArtwork(state.geometry?.template, state.artwork?.isValid ? state.artwork : undefined, previewStencil?.isValid ? previewStencil.stencil : undefined, state.settings.baseColor, state.settings.captionColor);
   document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting]').forEach((input) => {
     const value = state.settings[input.dataset.setting as keyof ProjectSettings];
     if (input instanceof HTMLInputElement && input.type === 'radio') input.checked = input.value === String(value);
@@ -170,12 +189,14 @@ const templateInput = document.querySelector<HTMLInputElement>('#template')!;
 templateInput.addEventListener('change', async () => {
   const templateFile = (templateInput.files ?? [])[0];
   if (!templateFile) return;
+  lastValidStencil = undefined;
   await importTemplate(templateFile);
 });
 const artworkInput = document.querySelector<HTMLInputElement>('#artwork')!;
 artworkInput.addEventListener('change', async () => {
   const artworkFile = (artworkInput.files ?? [])[0];
   if (!artworkFile) return;
+  lastValidStencil = undefined;
   artworkSource = await artworkFile.text();
   const state = store.update({ artworkFile, artwork: undefined, stencil: undefined, processing: { stage: 'artwork-import', message: `Validating ${artworkFile.name} in the geometry worker…` } });
   worker.importArtwork(state, artworkSource, true);

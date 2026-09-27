@@ -18,6 +18,6 @@ describe('caption rectangle alignment', () => {
 
   it('rejects invalid or too-small rectangles', () => {
     expect(() => captionOrigin({ left: 6, top: 2, right: 6, bottom: 18 }, 4, 4, 'center', 'center')).toThrow(/positive/i);
-    expect(() => captionOrigin(rectangle, 77, 5, 'center', 'center')).toThrow(/fit completely/i);
+    expect(() => captionOrigin(rectangle, 77, 5, 'center', 'center')).toThrow(/too large.*available/i);
   });
 });

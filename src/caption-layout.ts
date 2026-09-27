@@ -9,7 +9,8 @@ export function captionOrigin(rectangle: CaptionRectangle, captionWidth: number,
   const width = rectangle.right - rectangle.left;
   const height = rectangle.bottom - rectangle.top;
   if (width <= 0 || height <= 0) throw new Error('Caption rectangle must have positive width and height.');
-  if (captionWidth < 0 || captionHeight < 0 || captionWidth > width + EPSILON || captionHeight > height + EPSILON) throw new Error('Caption must fit completely inside the caption rectangle.');
+  if (captionWidth < 0 || captionHeight < 0) throw new Error('Caption bounds must be non-negative.');
+  if (captionWidth > width + EPSILON || captionHeight > height + EPSILON) throw new Error(`Caption is too large for its area (${captionWidth.toFixed(1)} × ${captionHeight.toFixed(1)} mm; available ${width.toFixed(1)} × ${height.toFixed(1)} mm). Shorten the text, reduce Size, or enlarge Caption placement in Advanced Placement.`);
 
   const x = horizontalAlignment === 'left' ? rectangle.left
     : horizontalAlignment === 'center' ? rectangle.left + (width - captionWidth) / 2

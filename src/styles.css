@@ -91,6 +91,17 @@ input[type="file"] { padding: 5px; font-size: .78rem; }
 input[type="color"] { min-height: 34px; padding: 2px; }
 small, .preview-hint, #export-note, .status-message { color: var(--text-muted); font-size: .78rem; line-height: 1.35; }
 .project-files small { display: block; margin-top: 9px; }
+.field-error {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid #c88678;
+  border-radius: 6px;
+  background: #fff1ed;
+  color: #7a2f27;
+  font-size: .8rem;
+  line-height: 1.4;
+}
+input[aria-invalid="true"] { border-color: #b34b3f; box-shadow: 0 0 0 1px #b34b3f; }
 
 button {
   min-height: 34px;
@@ -167,6 +178,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .viewport { width: 100%; max-width: 100%; height: clamp(300px, 44vh, 420px); min-height: 0; border: 1px solid #5c4337; border-radius: 8px; overflow: hidden; background: #15110f; }
 .viewport canvas { display: block; width: 100%; height: 100%; max-width: 100%; }
 .preview-hint { text-align: center; }
+.preview.is-stale .viewport { border-color: #b56b37; }
+.preview.is-stale .preview-hint { color: #8a4b24; font-weight: 650; }
 
 .preview.is-expanded {
   position: fixed;

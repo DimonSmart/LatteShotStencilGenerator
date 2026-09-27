@@ -33,7 +33,7 @@ export function parseSvgArtwork(source: string): PlanarArtwork {
     const style = path.userData.style as { fill?: string; fillRule?: string } | undefined;
     if (!style?.fill || style.fill === 'none') continue;
     const fillRule = style.fillRule === 'evenodd' ? 'evenodd' : 'nonzero';
-    for (const shape of SVGLoader.createShapes(path)) {
+    for (const shape of path.toShapes()) {
       appendContour(contours, shape.getPoints(12), false, fillRule);
       for (const hole of shape.holes) appendContour(contours, hole.getPoints(12), true, fillRule);
     }
