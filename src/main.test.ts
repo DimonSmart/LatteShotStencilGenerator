@@ -54,6 +54,13 @@ describe('workspace layout', () => {
     expect(mainSource).toContain('<button id="reset-artwork" class="secondary-action" type="button">Reset to fit</button>');
   });
 
+  it('marks every millimetre input as a compact measurement field', () => {
+    const millimetreLabels = mainSource.split('\n').filter((line) => line.includes('(mm) <input'));
+    expect(millimetreLabels).toHaveLength(13);
+    expect(millimetreLabels.every((line) => line.includes('class="measurement-field"'))).toBe(true);
+    expect(mainSource.match(/class="compact-measurement-row"/g)).toHaveLength(2);
+  });
+
   it('keeps the normal preview compact and independent from the controls height', () => {
     expect(mainSource).toContain('class="preview preview-compact"');
     expect(mainSource).toContain('id="expand-preview"');

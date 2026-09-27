@@ -36,8 +36,8 @@ app.innerHTML = `
       <section class="panel">
         <div class="section-heading"><h2>Artwork Placement</h2><span>Primary controls</span></div>
         <div class="placement-controls">
-          <label>X offset (mm) <input data-setting="artworkX" type="number" step="0.1" value="0" /></label>
-          <label>Y offset (mm) <input data-setting="artworkY" type="number" step="0.1" value="0" /></label>
+          <label class="measurement-field">X offset (mm) <input data-setting="artworkX" type="number" step="0.1" value="0" /></label>
+          <label class="measurement-field">Y offset (mm) <input data-setting="artworkY" type="number" step="0.1" value="0" /></label>
           <label>Scale <input data-setting="artworkScale" type="number" min="0.1" step="0.1" value="1" /></label>
           <button id="reset-artwork" class="secondary-action" type="button">Reset to fit</button>
         </div>
@@ -56,7 +56,7 @@ app.innerHTML = `
               <label class="segment"><input data-setting="captionHorizontalAlignment" type="radio" name="caption-horizontal-alignment" value="right" /><span>Right</span></label>
             </div>
           </fieldset>
-          <label>Size (mm) <input data-setting="captionSize" type="number" min="1" step="0.5" value="8" /></label>
+          <label class="measurement-field">Size (mm) <input data-setting="captionSize" type="number" min="1" step="0.5" value="8" /></label>
         </div>
         <p id="caption-error" class="field-error" role="alert" hidden></p>
       </section>
@@ -66,22 +66,22 @@ app.innerHTML = `
         <div class="accordion-content">
           <div class="advanced-group">
             <h3>Artwork working area</h3>
-            <div class="settings-grid four-columns">
-              <label>Left margin (mm) <input data-setting="artworkLeft" type="number" min="0" step="0.1" value="6.479" /></label>
-              <label>Right margin (mm) <input data-setting="artworkRight" type="number" min="0" step="0.1" value="6.479" /></label>
-              <label>Top margin (mm) <input data-setting="artworkTop" type="number" min="0" step="0.1" value="5.864" /></label>
-              <label>Bottom margin (mm) <input data-setting="artworkBottom" type="number" min="0" step="0.1" value="33.029" /></label>
+            <div class="compact-measurement-row">
+              <label class="measurement-field">Left margin (mm) <input data-setting="artworkLeft" type="number" min="0" step="0.1" value="6.479" /></label>
+              <label class="measurement-field">Right margin (mm) <input data-setting="artworkRight" type="number" min="0" step="0.1" value="6.479" /></label>
+              <label class="measurement-field">Top margin (mm) <input data-setting="artworkTop" type="number" min="0" step="0.1" value="5.864" /></label>
+              <label class="measurement-field">Bottom margin (mm) <input data-setting="artworkBottom" type="number" min="0" step="0.1" value="33.029" /></label>
             </div>
           </div>
           <div class="advanced-group">
             <h3>Caption placement</h3>
-            <div class="settings-grid four-columns">
-              <label>Vertical alignment <select data-setting="captionVerticalAlignment"><option value="top">Top</option><option value="center" selected>Center</option><option value="bottom">Bottom</option></select></label>
-              <label>Caption Left (mm) <input data-setting="captionLeft" type="number" min="0" step="0.1" value="6.479" /></label>
-              <label>Caption Top (mm) <input data-setting="captionTop" type="number" min="0" step="0.1" value="80.853" /></label>
-              <label>Caption Right (mm) <input data-setting="captionRight" type="number" min="0" step="0.1" value="81.468" /></label>
-              <label>Caption Bottom (mm) <input data-setting="captionBottom" type="number" min="0" step="0.1" value="113.882" /></label>
-              <label>Emboss height (mm) <input data-setting="captionEmbossHeight" type="number" min="0.05" step="0.05" value="0.35" /></label>
+            <div class="compact-measurement-row">
+              <label class="compact-select-field">Vertical alignment <select data-setting="captionVerticalAlignment"><option value="top">Top</option><option value="center" selected>Center</option><option value="bottom">Bottom</option></select></label>
+              <label class="measurement-field">Caption Left (mm) <input data-setting="captionLeft" type="number" min="0" step="0.1" value="6.479" /></label>
+              <label class="measurement-field">Caption Top (mm) <input data-setting="captionTop" type="number" min="0" step="0.1" value="80.853" /></label>
+              <label class="measurement-field">Caption Right (mm) <input data-setting="captionRight" type="number" min="0" step="0.1" value="81.468" /></label>
+              <label class="measurement-field">Caption Bottom (mm) <input data-setting="captionBottom" type="number" min="0" step="0.1" value="113.882" /></label>
+              <label class="measurement-field">Emboss height (mm) <input data-setting="captionEmbossHeight" type="number" min="0.05" step="0.05" value="0.35" /></label>
             </div>
           </div>
         </div>
@@ -91,7 +91,7 @@ app.innerHTML = `
         <summary><span>Bridges &amp; Materials</span><small>Manufacturing and colors</small></summary>
         <div class="accordion-content">
           <div class="settings-grid four-columns">
-            <label>Minimum bridge width (mm) <input data-setting="bridgeWidth" type="number" min="0.8" step="0.1" value="0.8" /></label>
+            <label class="measurement-field">Minimum bridge width (mm) <input data-setting="bridgeWidth" type="number" min="0.8" step="0.1" value="0.8" /></label>
             <label>Support lines per island <input data-setting="bridgeCount" type="number" min="1" max="8" step="1" value="1" /></label>
             <label>Base color <input data-setting="baseColor" type="color" value="#f4ede4" /></label>
             <label>Caption color <input data-setting="captionColor" type="color" value="#6a3a22" /></label>
