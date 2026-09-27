@@ -233,6 +233,6 @@ describe('stencil generation', () => {
   it('reports caption placements that cannot produce printable geometry', async () => {
     const api = await ManifoldModule(); api.setup();
     expect(() => generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', horizontalAlignment: 'left', verticalAlignment: 'top', rectangle: { left: 30, top: 2, right: 40, bottom: 18 }, size: 4, embossHeight: 0.35 })).toThrow(/rectangle.*template/i);
-    expect(() => generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', horizontalAlignment: 'left', verticalAlignment: 'top', rectangle: { left: 9, top: 2, right: 11, bottom: 18 }, size: 4, embossHeight: 0.35 })).toThrow(/fit completely/i);
+    expect(() => generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', horizontalAlignment: 'left', verticalAlignment: 'top', rectangle: { left: 9, top: 2, right: 11, bottom: 18 }, size: 4, embossHeight: 0.35 })).toThrow(/too large.*available/i);
   });
 });
