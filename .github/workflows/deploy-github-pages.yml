@@ -78,7 +78,25 @@ jobs:
                 curl --fail --silent --show-error --location "${base_url}${script_path#./}" --output /dev/null
                 curl --fail --silent --show-error --location "${base_url}${style_path#./}" --output /dev/null
 
-                echo "Live GitHub Pages site and bundled assets are reachable."
+                google-chrome --headless --no-sandbox --disable-dev-shm-usage \
+                  --enable-webgl --ignore-gpu-blocklist --use-gl=angle --use-angle=swiftshader \
+                  --virtual-time-budget=15000 --dump-dom "$SITE_URL" > rendered.html 2> chrome.log
+
+                if ! grep -q '<h1>Latte Shot Stencil Generator</h1>' rendered.html; then
+                  echo "The JavaScript application did not render."
+                  cat chrome.log
+                  sed -n '1,120p' rendered.html
+                  exit 1
+                fi
+
+                if grep -q 'id="processing-state"[^>]*data-stage="error"' rendered.html; then
+                  echo "The application rendered but entered an error state."
+                  grep -oE 'id="status"[^>]*>[^<]*|id="processing-state"[^>]*>[^<]*' rendered.html || true
+                  cat chrome.log
+                  exit 1
+                fi
+
+                echo "Live GitHub Pages site, bundled assets, and browser runtime are healthy."
                 exit 0
               fi
 
