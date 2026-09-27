@@ -121,6 +121,14 @@ app.innerHTML = `
       </div>
       <div id="viewport" class="viewport" role="img" aria-label="Interactive 3D stencil preview"></div>
       <p id="preview-hint" class="preview-hint">Quick visual check</p>
+      <div class="preview-credit">
+        <p>
+          Inspired by the
+          <a href="https://cults3d.com/en/3d-model/home/latteshot-one-click-coffee-art-camera" target="_blank" rel="noopener noreferrer">LatteShot One Click Coffee Art Camera</a>.
+          Thank the creator of this masterpiece: buy the model. I hope it makes the author happy and inspires an even better version!
+        </p>
+        <a href="https://github.com/DimonSmart/LatteShotStencilGenerator" target="_blank" rel="noopener noreferrer">Source code on GitHub</a>
+      </div>
     </section>
   </section>`;
 
