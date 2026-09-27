@@ -12,6 +12,7 @@ export class StencilViewport {
   private template?: THREE.Mesh;
   private caption?: THREE.Mesh;
   private artworkOverlay?: THREE.Group;
+  private hasFramedContent = false;
 
   constructor(private readonly element: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -68,7 +69,12 @@ export class StencilViewport {
       const captionGeometry = new THREE.BufferGeometry(); captionGeometry.setAttribute('position', new THREE.BufferAttribute(caption.positions, 3)); captionGeometry.setIndex(new THREE.BufferAttribute(caption.indices, 1)); captionGeometry.computeVertexNormals();
       this.caption = new THREE.Mesh(captionGeometry, new THREE.MeshStandardMaterial({ color: captionColor, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })); this.scene.add(this.caption);
     }
-    this.fit();
+    if (!this.hasFramedContent) {
+      this.hasFramedContent = true;
+      this.fit();
+    } else {
+      this.render();
+    }
   }
 
   /** Preview-only top-side contour overlay; the solid itself is set through setTemplate. */
