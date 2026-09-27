@@ -91,17 +91,51 @@ function threeMf(stencil: GeneratedStencil, triangles: readonly Triangle[], base
 
   const buildObjectId = hasCaptionParts ? 4 : 2;
   const model = `<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><basematerials id="1">${materials}</basematerials>${resources}</resources><build><item objectid="${buildObjectId}"/></build></model>`;
-  return zipSync({
-    '[Content_Types].xml': strToU8('<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>'),
+  const files: Record<string, Uint8Array> = {
+    '[Content_Types].xml': strToU8('<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/><Default Extension="config" ContentType="application/octet-stream"/></Types>'),
     '_rels/.rels': strToU8('<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>'),
     '3D/3dmodel.model': strToU8(model),
-  });
+  };
+  if (hasCaptionParts) files['Metadata/model_settings.config'] = strToU8(crealityModelSettings());
+  return zipSync(files);
 }
 
 function meshObject(id: number, name: string, positions: Float32Array, triangles: readonly Triangle[], materialIndex: number): string {
   const vertices = Array.from({ length: positions.length / 3 }, (_, index) => `<vertex x="${positions[index * 3]}" y="${positions[index * 3 + 1]}" z="${positions[index * 3 + 2]}"/>`).join('');
   const triangleXml = triangles.map(({ a, b, c }) => `<triangle v1="${a}" v2="${b}" v3="${c}"/>`).join('');
   return `<object id="${id}" type="model" name="${name}" pid="1" pindex="${materialIndex}"><mesh><vertices>${vertices}</vertices><triangles>${triangleXml}</triangles></mesh></object>`;
+}
+
+function crealityModelSettings(): string {
+  const matrix = '1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1';
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <object id="4">
+    <metadata key="name" value="Latte Shot Stencil"/>
+    <metadata key="extruder" value="1"/>
+    <part id="2" subtype="normal_part">
+      <metadata key="name" value="Base"/>
+      <metadata key="matrix" value="${matrix}"/>
+      <metadata key="extruder" value="1"/>
+    </part>
+    <part id="3" subtype="normal_part">
+      <metadata key="name" value="Caption"/>
+      <metadata key="matrix" value="${matrix}"/>
+      <metadata key="extruder" value="2"/>
+    </part>
+  </object>
+  <plate>
+    <metadata key="plater_id" value="1"/>
+    <model_instance>
+      <metadata key="object_id" value="4"/>
+      <metadata key="instance_id" value="0"/>
+      <metadata key="identify_id" value="4"/>
+    </model_instance>
+  </plate>
+  <assemble>
+    <assemble_item object_id="4" instance_id="0" transform="1 0 0 0 1 0 0 0 1 0 0 0" offset="0 0 0"/>
+  </assemble>
+</config>`;
 }
 
 function color(value: string, region: string): string {
