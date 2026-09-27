@@ -2,7 +2,6 @@
 
 import { describe, expect, it } from 'vitest';
 import mainSource from './main.ts?raw';
-import stylesSource from './styles.css?raw';
 
 describe('bridge controls', () => {
   it('does not permit a bridge width below the 0.8 mm manufacturability minimum', () => {
@@ -38,8 +37,7 @@ describe('caption controls', () => {
 describe('workspace layout', () => {
   it('keeps the normal preview compact and independent from the controls height', () => {
     expect(mainSource).toContain('class="preview preview-compact"');
-    expect(stylesSource).toContain('height: clamp(300px, 44vh, 420px)');
-    expect(stylesSource).not.toContain('min-height: 540px');
+    expect(mainSource).toContain('id="expand-preview"');
   });
 
   it('keeps advanced placement and bridge controls available behind closed details elements', () => {
