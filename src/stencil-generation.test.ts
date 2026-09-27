@@ -94,6 +94,23 @@ describe('stencil generation', () => {
     expectConnected(api, first);
   });
 
+  it('changes the physical restored bridge geometry when bridge width changes', async () => {
+    const api = await ManifoldModule(); api.setup();
+    const thin = generateStencil(api, template, ring, placement, rectangle, { width: 0.8, count: 1 });
+    const thick = generateStencil(api, template, ring, placement, rectangle, { width: 2, count: 1 });
+    expect(thin.bridges[0].width).toBe(0.8);
+    expect(thick.bridges[0].width).toBe(2);
+
+    const thinSolid = resultSolid(api, thin);
+    const thickSolid = resultSolid(api, thick);
+    try {
+      expect(thickSolid.volume()).toBeGreaterThan(thinSolid.volume());
+    } finally {
+      thinSolid.delete();
+      thickSolid.delete();
+    }
+  });
+
   it('connects multiple retained islands and rejects invalid generation inputs without preserving a result', async () => {
     const api = await ManifoldModule(); api.setup();
     expect(generateStencil(api, template, twoRings, placement, rectangle, { width: 0.8, count: 1 }).bridges).toHaveLength(2);

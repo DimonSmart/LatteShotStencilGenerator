@@ -373,17 +373,17 @@ export function generateStencil(api: ManifoldApi, template: TemplateGeometry, ar
             let acceptedCandidates: readonly BridgeCandidate[] = [seed];
             let acceptedValidation = seedValidation;
             if (bridgeCount > 1) {
-              const selected = selectBridgeCandidates(candidates, seed, bridgeCount, bridgeWidth);
-              for (let selectedCount = selected.length; selectedCount >= 2; selectedCount -= 1) {
-                const group = selected.slice(0, selectedCount);
+              const distributedCandidates = selectBridgeCandidates(candidates, seed, candidates.length, bridgeWidth);
+              for (const candidate of distributedCandidates.slice(1)) {
+                if (acceptedCandidates.length >= bridgeCount) break;
+                const group = [...acceptedCandidates, candidate];
                 const validated = validateBridgeCandidates(CrossSection, base, cutterSection, group, height, z0, pieces.length);
                 if (!validated) continue;
-                seedValidation.result.delete();
-                seedValidation.cutter.delete();
-                seedValidation.cutterSection.delete();
+                acceptedValidation.result.delete();
+                acceptedValidation.cutter.delete();
+                acceptedValidation.cutterSection.delete();
                 acceptedCandidates = group;
                 acceptedValidation = validated;
-                break;
               }
             }
 

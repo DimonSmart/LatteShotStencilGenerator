@@ -12,6 +12,13 @@ describe('bridge controls', () => {
     expect(mainSource).toContain('<input data-setting="bridgeCount" type="number" min="1" max="8" step="1" value="1" />');
     expect(mainSource).toContain("'bridgeWidth', 'bridgeCount', 'caption'");
   });
+
+  it('shows the actual bridge result and shortfall next to bridge controls', () => {
+    expect(mainSource).toContain('id="bridge-result"');
+    expect(mainSource).toContain('could not fit all');
+    expect(mainSource).toContain('Generated ${actualCount} bridge');
+    expect(mainSource).toContain("stage: 'bridge-generation'");
+  });
 });
 
 describe('caption controls', () => {

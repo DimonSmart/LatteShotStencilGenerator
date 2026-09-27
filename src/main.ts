@@ -89,11 +89,14 @@ app.innerHTML = `
 
       <details id="bridges-materials" class="panel accordion">
         <summary><span>Bridges &amp; Materials</span><small>Manufacturing and colors</small></summary>
-        <div class="accordion-content settings-grid four-columns">
-          <label>Minimum bridge width (mm) <input data-setting="bridgeWidth" type="number" min="0.8" step="0.1" value="0.8" /></label>
-          <label>Support lines per island <input data-setting="bridgeCount" type="number" min="1" max="8" step="1" value="1" /></label>
-          <label>Base color <input data-setting="baseColor" type="color" value="#f4ede4" /></label>
-          <label>Caption color <input data-setting="captionColor" type="color" value="#6a3a22" /></label>
+        <div class="accordion-content">
+          <div class="settings-grid four-columns">
+            <label>Minimum bridge width (mm) <input data-setting="bridgeWidth" type="number" min="0.8" step="0.1" value="0.8" /></label>
+            <label>Support lines per island <input data-setting="bridgeCount" type="number" min="1" max="8" step="1" value="1" /></label>
+            <label>Base color <input data-setting="baseColor" type="color" value="#f4ede4" /></label>
+            <label>Caption color <input data-setting="captionColor" type="color" value="#6a3a22" /></label>
+          </div>
+          <p id="bridge-result" class="bridge-result" aria-live="polite">Bridges are generated when detached islands are detected.</p>
         </div>
       </details>
 
@@ -137,6 +140,7 @@ const expandPreviewButton = document.querySelector<HTMLButtonElement>('#expand-p
 const processingState = document.querySelector<HTMLElement>('#processing-state')!;
 const captionInput = document.querySelector<HTMLInputElement>('[data-setting="caption"]')!;
 const captionError = document.querySelector<HTMLElement>('#caption-error')!;
+const bridgeResult = document.querySelector<HTMLElement>('#bridge-result')!;
 const previewHint = document.querySelector<HTMLElement>('#preview-hint')!;
 const status = document.querySelector<HTMLElement>('#status')!;
 const exportNote = document.querySelector<HTMLElement>('#export-note')!;
@@ -168,6 +172,23 @@ store.subscribe((state) => {
   captionInput.setAttribute('aria-invalid', String(Boolean(captionFailure)));
   previewPanel.classList.toggle('is-stale', showingLastValid);
   previewHint.textContent = showingLastValid ? 'Preview shows the last valid result; fix the error before export.' : 'Quick visual check';
+
+  const generatedBridgeState = state.stencil?.isValid ? state.stencil.stencil : undefined;
+  if (generatedBridgeState) {
+    const actualCount = generatedBridgeState.bridges.length;
+    const shortfallCount = generatedBridgeState.bridgeShortfallIslandCount ?? 0;
+    bridgeResult.dataset.state = shortfallCount > 0 ? 'warning' : 'ready';
+    bridgeResult.textContent = actualCount === 0
+      ? 'No detached islands detected; no bridges are needed.'
+      : shortfallCount > 0
+        ? `Generated ${actualCount} bridge${actualCount === 1 ? '' : 's'} total. ${shortfallCount} island${shortfallCount === 1 ? '' : 's'} could not fit all ${state.settings.bridgeCount} requested supports.`
+        : `Generated ${actualCount} bridge${actualCount === 1 ? '' : 's'} total at ${state.settings.bridgeWidth.toFixed(1)} mm width.`;
+  } else {
+    bridgeResult.dataset.state = state.processing.stage === 'error' ? 'warning' : 'processing';
+    bridgeResult.textContent = state.processing.stage === 'error'
+      ? 'Bridge result is unavailable until the current geometry error is fixed.'
+      : 'Updating bridge geometry…';
+  }
 
   if (renderedStencil !== previewStencil || renderedBaseColor !== state.settings.baseColor || renderedCaptionColor !== state.settings.captionColor || (!previewStencil?.isValid && renderedTemplate !== state.geometry)) {
     renderedTemplate = state.geometry;
@@ -206,8 +227,15 @@ document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting]'
   const key = input.dataset.setting as keyof ProjectSettings;
   const value = input.type === 'number' ? Number(input.value) : input.value;
   const regeneratesStencil = ['artworkLeft', 'artworkRight', 'artworkTop', 'artworkBottom', 'artworkX', 'artworkY', 'artworkScale', 'bridgeWidth', 'bridgeCount', 'caption', 'captionFont', 'captionHorizontalAlignment', 'captionVerticalAlignment', 'captionLeft', 'captionTop', 'captionRight', 'captionBottom', 'captionSize', 'captionEmbossHeight'].includes(key);
+  const bridgeSettingChanged = key === 'bridgeWidth' || key === 'bridgeCount';
   const state = artworkSource && regeneratesStencil
-    ? store.update({ settings: { [key]: value }, stencil: undefined, processing: { stage: 'placement', message: 'Updating artwork placement in the geometry worker…' } })
+    ? store.update({
+      settings: { [key]: value },
+      stencil: undefined,
+      processing: bridgeSettingChanged
+        ? { stage: 'bridge-generation', message: 'Updating automatic bridge geometry…' }
+        : { stage: 'placement', message: 'Updating generated stencil geometry…' },
+    })
     : store.update({ settings: { [key]: value } });
   if (artworkSource && regeneratesStencil) {
     if (['artworkLeft', 'artworkRight', 'artworkTop', 'artworkBottom', 'artworkX', 'artworkY', 'artworkScale'].includes(key)) worker.importArtwork(state, artworkSource);
