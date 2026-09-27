@@ -35,12 +35,12 @@ app.innerHTML = `
 
       <section class="panel">
         <div class="section-heading"><h2>Artwork Placement</h2><span>Primary controls</span></div>
-        <div class="settings-grid three-columns">
+        <div class="placement-controls">
           <label>X offset (mm) <input data-setting="artworkX" type="number" step="0.1" value="0" /></label>
           <label>Y offset (mm) <input data-setting="artworkY" type="number" step="0.1" value="0" /></label>
           <label>Scale <input data-setting="artworkScale" type="number" min="0.1" step="0.1" value="1" /></label>
+          <button id="reset-artwork" class="secondary-action" type="button">Reset to fit</button>
         </div>
-        <button id="reset-artwork" class="secondary-action" type="button">Reset to fit</button>
       </section>
 
       <section class="panel">

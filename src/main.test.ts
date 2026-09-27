@@ -49,6 +49,11 @@ describe('caption controls', () => {
 });
 
 describe('workspace layout', () => {
+  it('keeps artwork placement controls compact with reset in the same row', () => {
+    expect(mainSource).toContain('class="placement-controls"');
+    expect(mainSource).toContain('<button id="reset-artwork" class="secondary-action" type="button">Reset to fit</button>');
+  });
+
   it('keeps the normal preview compact and independent from the controls height', () => {
     expect(mainSource).toContain('class="preview preview-compact"');
     expect(mainSource).toContain('id="expand-preview"');
