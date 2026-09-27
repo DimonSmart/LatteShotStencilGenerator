@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { containPlacement, isContained, placedBounds, referenceArtworkMargins, workingRectangle } from './artwork-placement';
+import { containPlacement, defaultArtworkMargins, isContained, placedBounds, workingRectangle } from './artwork-placement';
 import { templateBounds } from './template-geometry';
 
 describe('artwork placement', () => {
-  const referenceBounds = templateBounds(new Float32Array([0, 0, 0, 88.345, 0, 0, 0, 113.882, 0, 0, 0, 1]));
+  const referenceBounds = templateBounds(new Float32Array([0, 0, 0, 87.947, 0, 0, 0, 113.883, 0, 0, 0, 1]));
 
-  it('derives the reference-card working rectangle from margins', () => {
-    const rectangle = workingRectangle(referenceBounds, referenceArtworkMargins);
-    expect(rectangle.x).toBeCloseTo(6.678, 3);
-    expect(rectangle.y).toBeCloseTo(33.029, 3);
-    expect(rectangle.width).toBeCloseTo(74.989, 3);
-    expect(rectangle.height).toBeCloseTo(74.989, 3);
+  it('derives the bundled blank-card top artwork rectangle from margins', () => {
+    const rectangle = workingRectangle(referenceBounds, defaultArtworkMargins);
+    expect(rectangle.x).toBeCloseTo(6.479, 3);
+    expect(rectangle.y).toBeCloseTo(5.864, 3);
+    expect(rectangle.width).toBeCloseTo(74.989, 2);
+    expect(rectangle.height).toBeCloseTo(74.989, 2);
   });
 
   it('centers contain placement while preserving aspect ratio', () => {

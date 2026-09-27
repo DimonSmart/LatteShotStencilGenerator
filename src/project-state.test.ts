@@ -18,3 +18,18 @@ describe('caption worker result protection', () => {
     expect(store.snapshot.stencil).toBeUndefined();
   });
 });
+
+describe('bundled blank-card layout defaults', () => {
+  it('places the artwork square above the footer caption area', () => {
+    const { settings } = new ProjectStore().snapshot;
+
+    expect(settings).toMatchObject({
+      artworkLeft: 6.479,
+      artworkRight: 6.479,
+      artworkTop: 5.864,
+      artworkBottom: 33.029,
+      captionX: 6.479,
+      captionY: 80.853,
+    });
+  });
+});

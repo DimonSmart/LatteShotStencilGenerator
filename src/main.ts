@@ -3,6 +3,7 @@ import { GeometryWorkerClient } from './geometry-worker-client';
 import { ProjectStore, type ProjectSettings, type ProjectState } from './project-state';
 import { StencilViewport } from './viewport';
 import { serializeStencil, type StencilExportFormat } from './stencil-export-adapter';
+import { loadDefaultTemplate } from './bundled-template';
 
 const app = document.querySelector<HTMLElement>('#app');
 if (!app) throw new Error('Application root is unavailable.');
@@ -18,10 +19,10 @@ app.innerHTML = `
         <label>SVG artwork <input id="artwork" type="file" accept="image/svg+xml,.svg" /></label>
       </section>
       <section><h2>Artwork placement</h2>
-        <label>Left margin (mm) <input data-setting="artworkLeft" type="number" min="0" step="0.1" value="6.678" /></label>
-        <label>Right margin (mm) <input data-setting="artworkRight" type="number" min="0" step="0.1" value="6.678" /></label>
-        <label>Top margin (mm) <input data-setting="artworkTop" type="number" min="0" step="0.1" value="33.029" /></label>
-        <label>Bottom margin (mm) <input data-setting="artworkBottom" type="number" min="0" step="0.1" value="5.864" /></label>
+        <label>Left margin (mm) <input data-setting="artworkLeft" type="number" min="0" step="0.1" value="6.479" /></label>
+        <label>Right margin (mm) <input data-setting="artworkRight" type="number" min="0" step="0.1" value="6.479" /></label>
+        <label>Top margin (mm) <input data-setting="artworkTop" type="number" min="0" step="0.1" value="5.864" /></label>
+        <label>Bottom margin (mm) <input data-setting="artworkBottom" type="number" min="0" step="0.1" value="33.029" /></label>
         <label>X (mm) <input data-setting="artworkX" type="number" step="0.1" value="0" /></label>
         <label>Y (mm) <input data-setting="artworkY" type="number" step="0.1" value="0" /></label>
         <label>Scale <input data-setting="artworkScale" type="number" min="0.1" step="0.1" value="1" /></label>
@@ -30,8 +31,8 @@ app.innerHTML = `
       <section><h2>Caption</h2>
         <label>Text <input data-setting="caption" type="text" maxlength="80" /></label>
         <label>Font <select data-setting="captionFont"><option value="stencil-block">Stencil Block (public domain)</option></select></label>
-        <label>X (mm) <input data-setting="captionX" type="number" step="0.1" value="6.678" /></label>
-        <label>Y (mm) <input data-setting="captionY" type="number" step="0.1" value="8" /></label>
+        <label>X (mm) <input data-setting="captionX" type="number" step="0.1" value="6.479" /></label>
+        <label>Y (mm) <input data-setting="captionY" type="number" step="0.1" value="80.853" /></label>
         <label>Size (mm) <input data-setting="captionSize" type="number" min="1" step="0.5" value="8" /></label>
         <label>Emboss height (mm) <input data-setting="captionEmbossHeight" type="number" min="0.05" step="0.05" value="0.35" /></label>
       </section>
@@ -92,8 +93,7 @@ const templateInput = document.querySelector<HTMLInputElement>('#template')!;
 templateInput.addEventListener('change', async () => {
   const templateFile = (templateInput.files ?? [])[0];
   if (!templateFile) return;
-  const state = store.update({ templateFile, stencil: undefined, processing: { stage: 'template-import', message: `Importing ${templateFile.name} in the geometry worker…` } });
-  worker.importTemplate(state, templateFile.name, await templateFile.arrayBuffer());
+  await importTemplate(templateFile);
 });
 const artworkInput = document.querySelector<HTMLInputElement>('#artwork')!;
 artworkInput.addEventListener('change', async () => {
@@ -123,6 +123,15 @@ document.querySelector('#reset-artwork')!.addEventListener('click', () => {
 document.querySelector('#top-view')!.addEventListener('click', () => viewport.topView());
 document.querySelector('#fit-view')!.addEventListener('click', () => viewport.fit());
 for (const format of ['stl', '3mf'] as const) document.querySelector<HTMLButtonElement>(`#export-${format === 'stl' ? 'stl' : '3mf'}`)!.addEventListener('click', () => downloadCurrentStencil(format));
+
+async function importTemplate(templateFile: File): Promise<void> {
+  const state = store.update({ templateFile, stencil: undefined, processing: { stage: 'template-import', message: `Importing ${templateFile.name} in the geometry worker…` } });
+  worker.importTemplate(state, templateFile.name, await templateFile.arrayBuffer());
+}
+
+void loadDefaultTemplate()
+  .then(importTemplate)
+  .catch((error: unknown) => store.setProcessing('error', error instanceof Error ? error.message : 'The bundled blank card could not be loaded.'));
 
 function downloadCurrentStencil(format: StencilExportFormat): void {
   const state = store.snapshot;

@@ -5,8 +5,8 @@ export interface WorkingRectangle { x: number; y: number; width: number; height:
 export interface ArtworkBounds { minX: number; minY: number; maxX: number; maxY: number; }
 export interface ArtworkPlacement { x: number; y: number; scale: number; }
 
-/** Reference-card margins are defaults; every rectangle is calculated from the imported template. */
-export const referenceArtworkMargins: ArtworkMargins = { left: 6.678, right: 6.678, top: 33.029, bottom: 5.864 };
+/** Bundled-card margins are defaults; every rectangle is calculated from the imported template. */
+export const defaultArtworkMargins: ArtworkMargins = { left: 6.479, right: 6.479, top: 5.864, bottom: 33.029 };
 
 export function workingRectangle(bounds: TemplateBounds, margins: ArtworkMargins): WorkingRectangle {
   const width = bounds.max[0] - bounds.min[0] - margins.left - margins.right;

@@ -67,17 +67,17 @@ export interface ProjectState {
 }
 
 const initialSettings: ProjectSettings = {
-  artworkLeft: 6.678,
-  artworkRight: 6.678,
-  artworkTop: 33.029,
-  artworkBottom: 5.864,
+  artworkLeft: 6.479,
+  artworkRight: 6.479,
+  artworkTop: 5.864,
+  artworkBottom: 33.029,
   artworkX: 0,
   artworkY: 0,
   artworkScale: 1,
   caption: '',
   captionFont: 'stencil-block',
-  captionX: 6.678,
-  captionY: 8,
+  captionX: 6.479,
+  captionY: 80.853,
   captionSize: 8,
   captionEmbossHeight: 0.35,
   bridgeWidth: 0.8,
