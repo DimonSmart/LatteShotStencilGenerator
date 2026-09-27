@@ -185,8 +185,49 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .viewport-toolbar { justify-content: space-between; }
 .viewport-actions { justify-content: flex-end; flex-wrap: wrap; }
 .viewport-toolbar strong { font-size: .95rem; }
-.viewport { width: 100%; max-width: 100%; height: clamp(300px, 44vh, 420px); min-height: 0; border: 1px solid #5c4337; border-radius: 8px; overflow: hidden; background: #15110f; }
+.viewport { position: relative; width: 100%; max-width: 100%; height: clamp(300px, 44vh, 420px); min-height: 0; border: 1px solid #5c4337; border-radius: 8px; overflow: hidden; background: #15110f; }
 .viewport canvas { display: block; width: 100%; height: 100%; max-width: 100%; }
+.orientation-gizmo {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 84px;
+  height: 84px;
+  pointer-events: none;
+  overflow: visible;
+  border: 1px solid rgb(232 214 199 / 22%);
+  border-radius: 50%;
+  background: rgb(21 17 15 / 62%);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 18%);
+}
+.orientation-axis { stroke-width: 2; stroke-linecap: round; }
+.orientation-axis-x { stroke: #d7655c; }
+.orientation-axis-y { stroke: #67ad70; }
+.orientation-axis-z { stroke: #658bd6; }
+.orientation-label {
+  dominant-baseline: middle;
+  text-anchor: middle;
+  font: 700 11px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  paint-order: stroke;
+  stroke: rgb(21 17 15 / 88%);
+  stroke-width: 3px;
+}
+.orientation-label-x { fill: #f08077; }
+.orientation-label-y { fill: #83ca8b; }
+.orientation-label-z { fill: #82a6ef; }
+.orientation-origin { fill: #f3dfcf; stroke: #15110f; stroke-width: 1; }
+.orientation-view {
+  position: absolute;
+  right: 20px;
+  bottom: 98px;
+  min-width: 68px;
+  pointer-events: none;
+  color: #e5d3c5;
+  font-size: .68rem;
+  font-weight: 700;
+  text-align: center;
+  text-shadow: 0 1px 2px #000;
+}
 .preview-hint { text-align: center; }
 .preview-credit {
   padding-top: 10px;
