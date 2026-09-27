@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 import mainSource from './main.ts?raw';
+import stylesSource from './styles.css?raw';
 
 describe('bridge controls', () => {
   it('does not permit a bridge width below the 0.8 mm manufacturability minimum', () => {
@@ -16,7 +17,8 @@ describe('bridge controls', () => {
 
 describe('caption controls', () => {
   it('offers centered-by-default horizontal and vertical alignment inside a caption rectangle', () => {
-    expect(mainSource).toContain('data-setting="captionHorizontalAlignment"');
+    expect(mainSource).toContain('data-setting="captionHorizontalAlignment" type="radio"');
+    expect(mainSource).toContain('value="center" checked');
     expect(mainSource).toContain('data-setting="captionVerticalAlignment"');
     expect(mainSource).toContain('<option value="center" selected>Center</option>');
     expect(mainSource).toContain('data-setting="captionLeft"');
@@ -30,5 +32,32 @@ describe('caption controls', () => {
   it('builds the font picker from the bundled font catalog', () => {
     expect(mainSource).toContain('bundledFonts.map');
     expect(mainSource).toContain('captionFontOptions');
+  });
+});
+
+describe('workspace layout', () => {
+  it('keeps the normal preview compact and independent from the controls height', () => {
+    expect(mainSource).toContain('class="preview preview-compact"');
+    expect(stylesSource).toContain('height: clamp(300px, 44vh, 420px)');
+    expect(stylesSource).not.toContain('min-height: 540px');
+  });
+
+  it('keeps advanced placement and bridge controls available behind closed details elements', () => {
+    expect(mainSource).toContain('<details id="advanced-placement" class="panel accordion">');
+    expect(mainSource).toContain('<details id="bridges-materials" class="panel accordion">');
+    expect(mainSource).toContain('data-setting="artworkLeft"');
+    expect(mainSource).toContain('data-setting="captionEmbossHeight"');
+  });
+
+  it('supports expanding and restoring the existing preview, including Escape', () => {
+    expect(mainSource).toContain('id="expand-preview"');
+    expect(mainSource).toContain("previewPanel.classList.toggle('is-expanded', expanded)");
+    expect(mainSource).toContain("event.key === 'Escape'");
+    expect(mainSource).toContain("expanded ? 'Close preview' : 'Expand preview'");
+  });
+
+  it('preserves the existing export button ids', () => {
+    expect(mainSource).toContain('id="export-stl"');
+    expect(mainSource).toContain('id="export-3mf"');
   });
 });

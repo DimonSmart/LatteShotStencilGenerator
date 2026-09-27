@@ -12,48 +12,112 @@ let artworkSource: string | undefined;
 const captionFontOptions = bundledFonts.map((font) => `<option value="${font.id}">${font.name}</option>`).join('');
 
 app.innerHTML = `
-  <header><div><p class="eyebrow">Browser-native workspace</p><h1>Latte Shot Stencil Generator</h1></div><p>All files stay in this browser tab.</p></header>
+  <header class="app-header">
+    <div class="header-copy">
+      <h1>Latte Shot Stencil Generator</h1>
+      <p>Create 3D printable stencils for latte art</p>
+    </div>
+    <div class="header-meta">
+      <span class="privacy-note">Files stay in this browser tab.</span>
+      <span id="processing-state" class="processing-state" data-stage="ready" aria-live="polite">Ready</span>
+    </div>
+  </header>
   <section class="workspace">
     <aside class="controls" aria-label="Stencil controls">
-      <section><h2>Source files</h2>
-        <label>3D template <input id="template" type="file" accept=".stl,.3mf" /></label>
-        <small>Upload the printable card template (STL or 3MF).</small>
-        <label>SVG artwork <input id="artwork" type="file" accept="image/svg+xml,.svg" /></label>
+      <section class="panel project-files">
+        <div class="section-heading"><h2>Project Files</h2><span>Template and artwork</span></div>
+        <div class="file-grid">
+          <label>3D template <input id="template" type="file" accept=".stl,.3mf" /></label>
+          <label>SVG artwork <input id="artwork" type="file" accept="image/svg+xml,.svg" /></label>
+        </div>
+        <small>Upload a printable card template and the artwork that should be cut into it.</small>
       </section>
-      <section><h2>Artwork placement</h2>
-        <label>Left margin (mm) <input data-setting="artworkLeft" type="number" min="0" step="0.1" value="6.479" /></label>
-        <label>Right margin (mm) <input data-setting="artworkRight" type="number" min="0" step="0.1" value="6.479" /></label>
-        <label>Top margin (mm) <input data-setting="artworkTop" type="number" min="0" step="0.1" value="5.864" /></label>
-        <label>Bottom margin (mm) <input data-setting="artworkBottom" type="number" min="0" step="0.1" value="33.029" /></label>
-        <label>X (mm) <input data-setting="artworkX" type="number" step="0.1" value="0" /></label>
-        <label>Y (mm) <input data-setting="artworkY" type="number" step="0.1" value="0" /></label>
-        <label>Scale <input data-setting="artworkScale" type="number" min="0.1" step="0.1" value="1" /></label>
-        <button id="reset-artwork" type="button">Reset to fit</button>
+
+      <section class="panel">
+        <div class="section-heading"><h2>Artwork Placement</h2><span>Primary controls</span></div>
+        <div class="settings-grid three-columns">
+          <label>X offset (mm) <input data-setting="artworkX" type="number" step="0.1" value="0" /></label>
+          <label>Y offset (mm) <input data-setting="artworkY" type="number" step="0.1" value="0" /></label>
+          <label>Scale <input data-setting="artworkScale" type="number" min="0.1" step="0.1" value="1" /></label>
+        </div>
+        <button id="reset-artwork" class="secondary-action" type="button">Reset to fit</button>
       </section>
-      <section><h2>Caption</h2>
-        <label>Text <input data-setting="caption" type="text" maxlength="80" /></label>
-        <label>Font <select data-setting="captionFont">${captionFontOptions}</select></label>
-        <label>Horizontal alignment <select data-setting="captionHorizontalAlignment"><option value="left">Left</option><option value="center" selected>Center</option><option value="right">Right</option></select></label>
-        <label>Vertical alignment <select data-setting="captionVerticalAlignment"><option value="top">Top</option><option value="center" selected>Center</option><option value="bottom">Bottom</option></select></label>
-        <label>Left (mm) <input data-setting="captionLeft" type="number" min="0" step="0.1" value="6.479" /></label>
-        <label>Top (mm) <input data-setting="captionTop" type="number" min="0" step="0.1" value="80.853" /></label>
-        <label>Right (mm) <input data-setting="captionRight" type="number" min="0" step="0.1" value="81.468" /></label>
-        <label>Bottom (mm) <input data-setting="captionBottom" type="number" min="0" step="0.1" value="113.882" /></label>
-        <label>Size (mm) <input data-setting="captionSize" type="number" min="1" step="0.5" value="8" /></label>
-        <label>Emboss height (mm) <input data-setting="captionEmbossHeight" type="number" min="0.05" step="0.05" value="0.35" /></label>
+
+      <section class="panel">
+        <div class="section-heading"><h2>Caption</h2><span>Optional text</span></div>
+        <div class="settings-grid caption-grid">
+          <label class="wide-field">Text <input data-setting="caption" type="text" maxlength="80" /></label>
+          <label>Font <select data-setting="captionFont">${captionFontOptions}</select></label>
+          <fieldset class="alignment-field">
+            <legend>Horizontal alignment</legend>
+            <div class="segmented-control" role="radiogroup" aria-label="Caption horizontal alignment">
+              <label class="segment"><input data-setting="captionHorizontalAlignment" type="radio" name="caption-horizontal-alignment" value="left" /><span>Left</span></label>
+              <label class="segment"><input data-setting="captionHorizontalAlignment" type="radio" name="caption-horizontal-alignment" value="center" checked /><span>Center</span></label>
+              <label class="segment"><input data-setting="captionHorizontalAlignment" type="radio" name="caption-horizontal-alignment" value="right" /><span>Right</span></label>
+            </div>
+          </fieldset>
+          <label>Size (mm) <input data-setting="captionSize" type="number" min="1" step="0.5" value="8" /></label>
+        </div>
       </section>
-      <section><h2>Bridges and materials</h2>
-        <label>Minimum bridge width (mm) <input data-setting="bridgeWidth" type="number" min="0.8" step="0.1" value="0.8" /></label>
-        <label>Support lines per island <input data-setting="bridgeCount" type="number" min="1" max="8" step="1" value="1" /></label>
-        <label>Base color <input data-setting="baseColor" type="color" value="#f4ede4" /></label>
-        <label>Caption color <input data-setting="captionColor" type="color" value="#6a3a22" /></label>
-      </section>
-      <section class="status" aria-live="polite"><h2>Processing status</h2><p id="status"></p></section>
-      <section><h2>Export</h2><p id="export-note">Export is unavailable until printable geometry has been generated and validated.</p>
-        <div class="export-actions"><button id="export-stl" disabled>Download STL</button><button id="export-3mf" disabled>Download 3MF</button></div>
+
+      <details id="advanced-placement" class="panel accordion">
+        <summary><span>Advanced Placement</span><small>Working areas and precise caption bounds</small></summary>
+        <div class="accordion-content">
+          <div class="advanced-group">
+            <h3>Artwork working area</h3>
+            <div class="settings-grid four-columns">
+              <label>Left margin (mm) <input data-setting="artworkLeft" type="number" min="0" step="0.1" value="6.479" /></label>
+              <label>Right margin (mm) <input data-setting="artworkRight" type="number" min="0" step="0.1" value="6.479" /></label>
+              <label>Top margin (mm) <input data-setting="artworkTop" type="number" min="0" step="0.1" value="5.864" /></label>
+              <label>Bottom margin (mm) <input data-setting="artworkBottom" type="number" min="0" step="0.1" value="33.029" /></label>
+            </div>
+          </div>
+          <div class="advanced-group">
+            <h3>Caption placement</h3>
+            <div class="settings-grid four-columns">
+              <label>Vertical alignment <select data-setting="captionVerticalAlignment"><option value="top">Top</option><option value="center" selected>Center</option><option value="bottom">Bottom</option></select></label>
+              <label>Caption Left (mm) <input data-setting="captionLeft" type="number" min="0" step="0.1" value="6.479" /></label>
+              <label>Caption Top (mm) <input data-setting="captionTop" type="number" min="0" step="0.1" value="80.853" /></label>
+              <label>Caption Right (mm) <input data-setting="captionRight" type="number" min="0" step="0.1" value="81.468" /></label>
+              <label>Caption Bottom (mm) <input data-setting="captionBottom" type="number" min="0" step="0.1" value="113.882" /></label>
+              <label>Emboss height (mm) <input data-setting="captionEmbossHeight" type="number" min="0.05" step="0.05" value="0.35" /></label>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details id="bridges-materials" class="panel accordion">
+        <summary><span>Bridges &amp; Materials</span><small>Manufacturing and colors</small></summary>
+        <div class="accordion-content settings-grid four-columns">
+          <label>Minimum bridge width (mm) <input data-setting="bridgeWidth" type="number" min="0.8" step="0.1" value="0.8" /></label>
+          <label>Support lines per island <input data-setting="bridgeCount" type="number" min="1" max="8" step="1" value="1" /></label>
+          <label>Base color <input data-setting="baseColor" type="color" value="#f4ede4" /></label>
+          <label>Caption color <input data-setting="captionColor" type="color" value="#6a3a22" /></label>
+        </div>
+      </details>
+
+      <section class="export-panel" aria-label="Export">
+        <div class="export-copy">
+          <h2>Export</h2>
+          <p id="export-note">Export is unavailable until printable geometry has been generated and validated.</p>
+          <p id="status" class="status-message" aria-live="polite"></p>
+        </div>
+        <div class="export-actions"><button id="export-stl" type="button" disabled>Download STL</button><button id="export-3mf" type="button" disabled>Download 3MF</button></div>
       </section>
     </aside>
-    <section class="preview" aria-label="3D preview"><div class="viewport-toolbar"><strong>3D preview</strong><div><button id="top-view">Top view</button><button id="fit-view">Fit model</button></div></div><div id="viewport" class="viewport" role="img" aria-label="Interactive 3D stencil preview"></div><p class="preview-hint">The preview will show your uploaded template and generated stencil geometry.</p></section>
+
+    <section id="preview-panel" class="preview preview-compact" aria-label="3D preview">
+      <div class="viewport-toolbar">
+        <strong>3D Preview</strong>
+        <div class="viewport-actions">
+          <button id="top-view" type="button">Top view</button>
+          <button id="fit-view" type="button">Fit model</button>
+          <button id="expand-preview" type="button" aria-expanded="false">Expand preview</button>
+        </div>
+      </div>
+      <div id="viewport" class="viewport" role="img" aria-label="Interactive 3D stencil preview"></div>
+      <p class="preview-hint">Quick visual check</p>
+    </section>
   </section>`;
 
 const store = new ProjectStore();
@@ -67,6 +131,9 @@ const worker = new GeometryWorkerClient((result) => {
   return applied;
 });
 const viewport = new StencilViewport(document.querySelector<HTMLElement>('#viewport')!);
+const previewPanel = document.querySelector<HTMLElement>('#preview-panel')!;
+const expandPreviewButton = document.querySelector<HTMLButtonElement>('#expand-preview')!;
+const processingState = document.querySelector<HTMLElement>('#processing-state')!;
 const status = document.querySelector<HTMLElement>('#status')!;
 const exportNote = document.querySelector<HTMLElement>('#export-note')!;
 let renderedTemplate: ProjectState['geometry'] | undefined;
@@ -77,9 +144,12 @@ let exportInProgress = false;
 
 store.subscribe((state) => {
   status.textContent = state.processing.message;
+  const processingLabel = state.processing.stage === 'idle' ? 'Ready' : state.processing.stage === 'error' ? 'Error' : 'Processing…';
+  processingState.textContent = processingLabel;
+  processingState.dataset.stage = state.processing.stage === 'idle' ? 'ready' : state.processing.stage === 'error' ? 'error' : 'processing';
   const canExport = state.stencil?.isValid === true && !exportInProgress;
   document.querySelectorAll<HTMLButtonElement>('#export-stl, #export-3mf').forEach((button) => { button.disabled = !canExport; });
-  exportNote.textContent = canExport ? 'Printable stencil geometry is valid.' : 'Export is unavailable until the generated stencil is valid.';
+  exportNote.textContent = canExport ? 'Printable stencil geometry is valid.' : 'Export is available once the generated stencil is valid.';
   if (renderedStencil !== state.stencil || renderedBaseColor !== state.settings.baseColor || renderedCaptionColor !== state.settings.captionColor || (state.stencil?.isValid !== true && renderedTemplate !== state.geometry)) {
     renderedTemplate = state.geometry;
     renderedStencil = state.stencil;
@@ -91,7 +161,8 @@ store.subscribe((state) => {
   viewport.setArtwork(state.geometry?.template, state.artwork?.isValid ? state.artwork : undefined, state.stencil?.isValid ? state.stencil.stencil : undefined, state.settings.baseColor, state.settings.captionColor);
   document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting]').forEach((input) => {
     const value = state.settings[input.dataset.setting as keyof ProjectSettings];
-    if (document.activeElement !== input) input.value = String(value);
+    if (input instanceof HTMLInputElement && input.type === 'radio') input.checked = input.value === String(value);
+    else if (document.activeElement !== input) input.value = String(value);
   });
 });
 
@@ -110,6 +181,7 @@ artworkInput.addEventListener('change', async () => {
   worker.importArtwork(state, artworkSource, true);
 });
 document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting]').forEach((input) => input.addEventListener('input', () => {
+  if (input instanceof HTMLInputElement && input.type === 'radio' && !input.checked) return;
   const key = input.dataset.setting as keyof ProjectSettings;
   const value = input.type === 'number' ? Number(input.value) : input.value;
   const regeneratesStencil = ['artworkLeft', 'artworkRight', 'artworkTop', 'artworkBottom', 'artworkX', 'artworkY', 'artworkScale', 'bridgeWidth', 'bridgeCount', 'caption', 'captionFont', 'captionHorizontalAlignment', 'captionVerticalAlignment', 'captionLeft', 'captionTop', 'captionRight', 'captionBottom', 'captionSize', 'captionEmbossHeight'].includes(key);
@@ -128,7 +200,18 @@ document.querySelector('#reset-artwork')!.addEventListener('click', () => {
 });
 document.querySelector('#top-view')!.addEventListener('click', () => viewport.topView());
 document.querySelector('#fit-view')!.addEventListener('click', () => viewport.fit());
+expandPreviewButton.addEventListener('click', () => setPreviewExpanded(!previewPanel.classList.contains('is-expanded')));
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && previewPanel.classList.contains('is-expanded')) setPreviewExpanded(false);
+});
 for (const format of ['stl', '3mf'] as const) document.querySelector<HTMLButtonElement>(`#export-${format === 'stl' ? 'stl' : '3mf'}`)!.addEventListener('click', () => downloadCurrentStencil(format));
+
+function setPreviewExpanded(expanded: boolean): void {
+  previewPanel.classList.toggle('is-expanded', expanded);
+  document.body.classList.toggle('preview-expanded', expanded);
+  expandPreviewButton.setAttribute('aria-expanded', String(expanded));
+  expandPreviewButton.textContent = expanded ? 'Close preview' : 'Expand preview';
+}
 
 async function importTemplate(templateFile: File): Promise<void> {
   const state = store.update({ templateFile, stencil: undefined, processing: { stage: 'template-import', message: `Importing ${templateFile.name} in the geometry worker…` } });
