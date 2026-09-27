@@ -204,7 +204,7 @@ store.subscribe((state) => {
     renderedBaseColor = state.settings.baseColor;
     renderedCaptionColor = state.settings.captionColor;
     const generated = previewStencil?.isValid ? previewStencil.stencil : undefined;
-    viewport.setTemplate(generated ?? (state.geometry?.isValid ? state.geometry.template : undefined), state.settings.baseColor, generated?.caption, state.settings.captionColor);
+    viewport.setTemplate(generated ?? (state.geometry?.isValid ? state.geometry.template : undefined), state.settings.baseColor, generated?.caption, state.settings.captionColor, state.geometry?.isValid ? state.geometry.template : undefined);
   }
   viewport.setArtwork(state.geometry?.template, state.artwork?.isValid ? state.artwork : undefined, previewStencil?.isValid ? previewStencil.stencil : undefined, state.settings.baseColor, state.settings.captionColor);
   document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting]').forEach((input) => {

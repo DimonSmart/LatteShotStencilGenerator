@@ -19,6 +19,7 @@ export class StencilViewport {
   private readonly camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
   private readonly renderer: THREE.WebGLRenderer;
   private readonly controls: OrbitControls;
+  private readonly contentRoot = new THREE.Group();
   private readonly orientationGizmo: SVGSVGElement;
   private readonly orientationView: HTMLSpanElement;
   private readonly orientationAxes = new Map<GizmoAxis, { line: SVGLineElement; label: SVGTextElement }>();
@@ -35,6 +36,8 @@ export class StencilViewport {
 
     this.scene.add(this.createGrid());
     this.scene.add(this.createSceneAxes());
+    this.contentRoot.name = 'preview-content';
+    this.scene.add(this.contentRoot);
     this.scene.add(new THREE.HemisphereLight(0xffe9d6, 0x201611, 2));
 
     const orientation = this.createOrientationGizmo();
@@ -75,9 +78,10 @@ export class StencilViewport {
     this.render();
   }
 
-  setTemplate(template?: { positions: Float32Array; indices: Uint32Array }, baseColor = '#f4ede4', caption?: { positions: Float32Array; indices: Uint32Array }, captionColor = '#6a3a22'): void {
-    if (this.template) { this.scene.remove(this.template); this.template.geometry.dispose(); }
-    if (this.caption) { this.scene.remove(this.caption); this.caption.geometry.dispose(); }
+  setTemplate(template?: { positions: Float32Array; indices: Uint32Array }, baseColor = '#f4ede4', caption?: { positions: Float32Array; indices: Uint32Array }, captionColor = '#6a3a22', referenceTemplate?: TemplateGeometry): void {
+    this.updatePreviewOrigin(referenceTemplate);
+    if (this.template) { this.contentRoot.remove(this.template); this.template.geometry.dispose(); }
+    if (this.caption) { this.contentRoot.remove(this.caption); this.caption.geometry.dispose(); }
     this.template = undefined;
     this.caption = undefined;
     if (!template) return this.render();
@@ -86,10 +90,10 @@ export class StencilViewport {
     geometry.setIndex(new THREE.BufferAttribute(template.indices, 1));
     geometry.computeVertexNormals();
     this.template = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: baseColor, metalness: 0, roughness: 0.7 }));
-    this.scene.add(this.template);
+    this.contentRoot.add(this.template);
     if (caption) {
       const captionGeometry = new THREE.BufferGeometry(); captionGeometry.setAttribute('position', new THREE.BufferAttribute(caption.positions, 3)); captionGeometry.setIndex(new THREE.BufferAttribute(caption.indices, 1)); captionGeometry.computeVertexNormals();
-      this.caption = new THREE.Mesh(captionGeometry, new THREE.MeshStandardMaterial({ color: captionColor, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })); this.scene.add(this.caption);
+      this.caption = new THREE.Mesh(captionGeometry, new THREE.MeshStandardMaterial({ color: captionColor, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })); this.contentRoot.add(this.caption);
     }
     if (!this.hasFramedContent) {
       this.hasFramedContent = true;
@@ -101,7 +105,7 @@ export class StencilViewport {
 
   /** Preview-only top-side contour overlay; the solid itself is set through setTemplate. */
   setArtwork(template: TemplateGeometry | undefined, result: ArtworkResult | undefined, _stencil?: GeneratedStencil, _baseColor?: string, _captionColor?: string): void {
-    if (this.artworkOverlay) { this.scene.remove(this.artworkOverlay); this.artworkOverlay.traverse((item) => { if (item instanceof THREE.Line) item.geometry.dispose(); }); }
+    if (this.artworkOverlay) { this.contentRoot.remove(this.artworkOverlay); this.artworkOverlay.traverse((item) => { if (item instanceof THREE.Line) item.geometry.dispose(); }); }
     this.artworkOverlay = undefined;
     if (!template || !result?.artwork || !result.placement) return this.render();
     const group = new THREE.Group();
@@ -111,7 +115,7 @@ export class StencilViewport {
       points.push(points[0].clone());
       group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: contour.hole ? 0xf7ca62 : 0x63d7ff })));
     }
-    this.artworkOverlay = group; this.scene.add(group); this.render();
+    this.artworkOverlay = group; this.contentRoot.add(group); this.render();
   }
 
   render(): void {
@@ -244,6 +248,18 @@ export class StencilViewport {
     if (viewDirection.z < -0.985) this.orientationView.textContent = '+Z top';
     else if (viewDirection.z > 0.985) this.orientationView.textContent = '-Z bottom';
     else this.orientationView.textContent = '';
+  }
+
+  private updatePreviewOrigin(template?: TemplateGeometry): void {
+    if (!template) {
+      this.contentRoot.position.set(0, 0, 0);
+      return;
+    }
+
+    const centerX = (template.bounds.min[0] + template.bounds.max[0]) / 2;
+    const centerY = (template.bounds.min[1] + template.bounds.max[1]) / 2;
+    this.contentRoot.position.set(-centerX, -centerY, 0);
+    this.contentRoot.updateMatrixWorld(true);
   }
 
   private bounds(): THREE.Box3 {

@@ -73,3 +73,10 @@ describe('workspace layout', () => {
     expect(mainSource).toContain('id="export-3mf"');
   });
 });
+
+
+describe('preview coordinates', () => {
+  it('anchors the preview origin to the source template even when generated geometry is displayed', () => {
+    expect(mainSource).toContain("state.settings.captionColor, state.geometry?.isValid ? state.geometry.template : undefined");
+  });
+});
