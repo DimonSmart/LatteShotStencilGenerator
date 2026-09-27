@@ -61,6 +61,15 @@ describe('workspace layout', () => {
     expect(mainSource.match(/class="compact-measurement-row"/g)).toHaveLength(2);
   });
 
+  it('keeps repeated margin and caption wording in group headings instead of field labels', () => {
+    expect(mainSource).toContain('<h3>Artwork margins</h3>');
+    expect(mainSource).toContain('<h3>Caption placement</h3>');
+    expect(mainSource).not.toContain('Left margin (mm)');
+    expect(mainSource).not.toContain('Right margin (mm)');
+    expect(mainSource).not.toContain('Caption Left (mm)');
+    expect(mainSource).not.toContain('Caption Right (mm)');
+  });
+
   it('keeps the normal preview compact and independent from the controls height', () => {
     expect(mainSource).toContain('class="preview preview-compact"');
     expect(mainSource).toContain('id="expand-preview"');

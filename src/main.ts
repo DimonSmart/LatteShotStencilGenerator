@@ -65,22 +65,22 @@ app.innerHTML = `
         <summary><span>Advanced Placement</span><small>Working areas and precise caption bounds</small></summary>
         <div class="accordion-content">
           <div class="advanced-group">
-            <h3>Artwork working area</h3>
+            <h3>Artwork margins</h3>
             <div class="compact-measurement-row">
-              <label class="measurement-field">Left margin (mm) <input data-setting="artworkLeft" type="number" min="0" step="0.1" value="6.479" /></label>
-              <label class="measurement-field">Right margin (mm) <input data-setting="artworkRight" type="number" min="0" step="0.1" value="6.479" /></label>
-              <label class="measurement-field">Top margin (mm) <input data-setting="artworkTop" type="number" min="0" step="0.1" value="5.864" /></label>
-              <label class="measurement-field">Bottom margin (mm) <input data-setting="artworkBottom" type="number" min="0" step="0.1" value="33.029" /></label>
+              <label class="measurement-field">Left (mm) <input data-setting="artworkLeft" type="number" min="0" step="0.1" value="6.479" /></label>
+              <label class="measurement-field">Right (mm) <input data-setting="artworkRight" type="number" min="0" step="0.1" value="6.479" /></label>
+              <label class="measurement-field">Top (mm) <input data-setting="artworkTop" type="number" min="0" step="0.1" value="5.864" /></label>
+              <label class="measurement-field">Bottom (mm) <input data-setting="artworkBottom" type="number" min="0" step="0.1" value="33.029" /></label>
             </div>
           </div>
           <div class="advanced-group">
             <h3>Caption placement</h3>
             <div class="compact-measurement-row">
               <label class="compact-select-field">Vertical alignment <select data-setting="captionVerticalAlignment"><option value="top">Top</option><option value="center" selected>Center</option><option value="bottom">Bottom</option></select></label>
-              <label class="measurement-field">Caption Left (mm) <input data-setting="captionLeft" type="number" min="0" step="0.1" value="6.479" /></label>
-              <label class="measurement-field">Caption Top (mm) <input data-setting="captionTop" type="number" min="0" step="0.1" value="80.853" /></label>
-              <label class="measurement-field">Caption Right (mm) <input data-setting="captionRight" type="number" min="0" step="0.1" value="81.468" /></label>
-              <label class="measurement-field">Caption Bottom (mm) <input data-setting="captionBottom" type="number" min="0" step="0.1" value="113.882" /></label>
+              <label class="measurement-field">Left (mm) <input data-setting="captionLeft" type="number" min="0" step="0.1" value="6.479" /></label>
+              <label class="measurement-field">Top (mm) <input data-setting="captionTop" type="number" min="0" step="0.1" value="80.853" /></label>
+              <label class="measurement-field">Right (mm) <input data-setting="captionRight" type="number" min="0" step="0.1" value="81.468" /></label>
+              <label class="measurement-field">Bottom (mm) <input data-setting="captionBottom" type="number" min="0" step="0.1" value="113.882" /></label>
               <label class="measurement-field">Emboss height (mm) <input data-setting="captionEmbossHeight" type="number" min="0.05" step="0.05" value="0.35" /></label>
             </div>
           </div>
