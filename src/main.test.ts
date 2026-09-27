@@ -15,10 +15,16 @@ describe('bridge controls', () => {
 });
 
 describe('caption controls', () => {
-  it('offers left, centered-by-default, and right alignment', () => {
-    expect(mainSource).toContain('data-setting="captionAlignment"');
+  it('offers centered-by-default horizontal and vertical alignment inside a caption rectangle', () => {
+    expect(mainSource).toContain('data-setting="captionHorizontalAlignment"');
+    expect(mainSource).toContain('data-setting="captionVerticalAlignment"');
     expect(mainSource).toContain('<option value="center" selected>Center</option>');
-    expect(mainSource).toContain("'captionAlignment'");
+    expect(mainSource).toContain('data-setting="captionLeft"');
+    expect(mainSource).toContain('data-setting="captionTop"');
+    expect(mainSource).toContain('data-setting="captionRight"');
+    expect(mainSource).toContain('data-setting="captionBottom"');
+    expect(mainSource).toContain("'captionHorizontalAlignment'");
+    expect(mainSource).toContain("'captionVerticalAlignment'");
   });
 
   it('builds the font picker from the bundled font catalog', () => {

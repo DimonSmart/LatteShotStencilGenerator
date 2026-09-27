@@ -28,9 +28,12 @@ describe('bundled blank-card layout defaults', () => {
       artworkRight: 6.479,
       artworkTop: 5.864,
       artworkBottom: 33.029,
-      captionAlignment: 'center',
-      captionX: 6.479,
-      captionY: 80.853,
+      captionHorizontalAlignment: 'center',
+      captionVerticalAlignment: 'center',
+      captionLeft: 6.479,
+      captionTop: 80.853,
+      captionRight: 81.468,
+      captionBottom: 113.882,
     });
   });
 });

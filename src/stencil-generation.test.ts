@@ -207,8 +207,8 @@ describe('stencil generation', () => {
 
   it('omits empty captions and embosses valid closed glyph outlines onto the top surface', async () => {
     const api = await ManifoldModule(); api.setup();
-    const empty = generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: '', font: 'stencil-block', alignment: 'left', x: 2, y: 2, size: 4, embossHeight: 0.35 });
-    const embossed = generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', alignment: 'left', x: 2, y: 2, size: 4, embossHeight: 0.35 });
+    const empty = generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: '', font: 'stencil-block', horizontalAlignment: 'left', verticalAlignment: 'top', rectangle: { left: 2, top: 2, right: 18, bottom: 18 }, size: 4, embossHeight: 0.35 });
+    const embossed = generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', horizontalAlignment: 'left', verticalAlignment: 'top', rectangle: { left: 2, top: 2, right: 18, bottom: 18 }, size: 4, embossHeight: 0.35 });
     expect(empty.caption).toBeUndefined();
     expect(embossed.caption?.indices.length).toBeGreaterThan(0);
     expect(Math.max(...embossed.positions.filter((_, index) => index % 3 === 2))).toBeCloseTo(2.35, 4);
@@ -219,9 +219,20 @@ describe('stencil generation', () => {
     expect(Math.max(...ys)).toBeCloseTo(18, 4);
   });
 
+  it('centers caption geometry inside its configured rectangle', async () => {
+    const api = await ManifoldModule(); api.setup();
+    const result = generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', horizontalAlignment: 'center', verticalAlignment: 'center', rectangle: { left: 2, top: 2, right: 18, bottom: 18 }, size: 4, embossHeight: 0.35 });
+    const positions = result.caption!.positions;
+    const xs = positions.filter((_, index) => index % 3 === 0);
+    const ys = positions.filter((_, index) => index % 3 === 1);
+
+    expect((Math.min(...xs) + Math.max(...xs)) / 2).toBeCloseTo(10, 4);
+    expect((Math.min(...ys) + Math.max(...ys)) / 2).toBeCloseTo(10, 4);
+  });
+
   it('reports caption placements that cannot produce printable geometry', async () => {
     const api = await ManifoldModule(); api.setup();
-    expect(() => generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', alignment: 'left', x: 30, y: 2, size: 4, embossHeight: 0.35 })).toThrow(/outside/i);
-    expect(() => generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', alignment: 'left', x: 9, y: 2, size: 4, embossHeight: 0.35 })).toThrow(/fit completely/i);
+    expect(() => generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', horizontalAlignment: 'left', verticalAlignment: 'top', rectangle: { left: 30, top: 2, right: 40, bottom: 18 }, size: 4, embossHeight: 0.35 })).toThrow(/rectangle.*template/i);
+    expect(() => generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', horizontalAlignment: 'left', verticalAlignment: 'top', rectangle: { left: 9, top: 2, right: 11, bottom: 18 }, size: 4, embossHeight: 0.35 })).toThrow(/fit completely/i);
   });
 });

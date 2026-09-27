@@ -19,9 +19,12 @@ export interface ProjectSettings {
   artworkScale: number;
   caption: string;
   captionFont: import('./font-catalog').BundledFontId;
-  captionAlignment: import('./caption-layout').CaptionAlignment;
-  captionX: number;
-  captionY: number;
+  captionHorizontalAlignment: import('./caption-layout').CaptionHorizontalAlignment;
+  captionVerticalAlignment: import('./caption-layout').CaptionVerticalAlignment;
+  captionLeft: number;
+  captionTop: number;
+  captionRight: number;
+  captionBottom: number;
   captionSize: number;
   captionEmbossHeight: number;
   bridgeWidth: number;
@@ -77,9 +80,12 @@ const initialSettings: ProjectSettings = {
   artworkScale: 1,
   caption: '',
   captionFont: 'stencil-block',
-  captionAlignment: 'center',
-  captionX: 6.479,
-  captionY: 80.853,
+  captionHorizontalAlignment: 'center',
+  captionVerticalAlignment: 'center',
+  captionLeft: 6.479,
+  captionTop: 80.853,
+  captionRight: 81.468,
+  captionBottom: 113.882,
   captionSize: 8,
   captionEmbossHeight: 0.35,
   bridgeWidth: 0.8,

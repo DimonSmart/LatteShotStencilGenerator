@@ -3,7 +3,7 @@ import type { PlanarArtwork } from './svg-artwork-adapter';
 import type { TemplateGeometry } from './template-geometry';
 import { captionOutline } from './font-outline-adapter';
 import type { BundledFontId } from './font-catalog';
-import { captionHorizontalOrigin, type CaptionAlignment } from './caption-layout';
+import { captionOrigin, type CaptionHorizontalAlignment, type CaptionRectangle, type CaptionVerticalAlignment } from './caption-layout';
 
 export interface Bridge { readonly x: number; readonly y: number; readonly width: number; readonly direction: 'left' | 'right' | 'up' | 'down'; }
 export interface BridgeSettings { readonly width: number; readonly count: number; }
@@ -272,7 +272,7 @@ function assertPrintable(solid: Solid): void {
 }
 
 /** Uses Manifold for every planar/solid boolean; bridges are kept by removing only the adjacent cutter component needed for each connection. */
-export interface CaptionSettings { readonly text: string; readonly font: BundledFontId; readonly alignment: CaptionAlignment; readonly x: number; readonly y: number; readonly size: number; readonly embossHeight: number; }
+export interface CaptionSettings { readonly text: string; readonly font: BundledFontId; readonly horizontalAlignment: CaptionHorizontalAlignment; readonly verticalAlignment: CaptionVerticalAlignment; readonly rectangle: CaptionRectangle; readonly size: number; readonly embossHeight: number; }
 
 function captionPolygons(template: TemplateGeometry, caption: CaptionSettings): Array<Array<[number, number]>> {
   if (!caption.text) return [];
@@ -280,10 +280,10 @@ function captionPolygons(template: TemplateGeometry, caption: CaptionSettings): 
   const outline = captionOutline(caption.text, caption.font, caption.size);
   const topWidth = template.bounds.max[0] - template.bounds.min[0];
   const topHeight = template.bounds.max[1] - template.bounds.min[1];
-  const originX = captionHorizontalOrigin(topWidth, outline.bounds.maxX, caption.x, caption.alignment);
-  if (caption.y + outline.bounds.maxY <= 0 || caption.y >= topHeight) throw new Error('Caption is completely outside the template.');
-  if (caption.y < 0 || caption.y + outline.bounds.maxY > topHeight) throw new Error('Caption must fit completely on the template top surface.');
-  return outline.contours.map((contour) => contour.map(([x, y]) => [template.bounds.min[0] + originX + x, template.bounds.max[1] - (caption.y + y)]));
+  const { rectangle } = caption;
+  if (rectangle.left < 0 || rectangle.top < 0 || rectangle.right > topWidth || rectangle.bottom > topHeight) throw new Error('Caption rectangle must fit completely on the template top surface.');
+  const [originX, originY] = captionOrigin(rectangle, outline.bounds.maxX, outline.bounds.maxY, caption.horizontalAlignment, caption.verticalAlignment);
+  return outline.contours.map((contour) => contour.map(([x, y]) => [template.bounds.min[0] + originX + x, template.bounds.max[1] - (originY + y)]));
 }
 
 function generatedMesh(result: Solid, bridges: readonly Bridge[], bridgeShortfallIslandCount: number): GeneratedStencil {
