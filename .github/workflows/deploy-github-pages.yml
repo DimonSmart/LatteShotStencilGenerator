@@ -44,6 +44,8 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -51,3 +53,41 @@ jobs:
       - name: Deploy GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  smoke-test:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify deployed site
+        env:
+          SITE_URL: ${{ needs.deploy.outputs.page_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for attempt in {1..12}; do
+            echo "Checking $SITE_URL (attempt $attempt/12)..."
+            if curl --fail --silent --show-error --location "$SITE_URL" --output index.html; then
+              if grep -q '<title>Latte Shot Stencil Generator</title>' index.html \
+                && grep -q 'src="./assets/' index.html \
+                && grep -q 'href="./assets/' index.html; then
+                script_path="$(grep -oE 'src="\./assets/[^"]+"' index.html | head -n 1 | cut -d'"' -f2)"
+                style_path="$(grep -oE 'href="\./assets/[^"]+"' index.html | head -n 1 | cut -d'"' -f2)"
+                base_url="${SITE_URL%/}/"
+
+                curl --fail --silent --show-error --location "${base_url}${script_path#./}" --output /dev/null
+                curl --fail --silent --show-error --location "${base_url}${style_path#./}" --output /dev/null
+
+                echo "Live GitHub Pages site and bundled assets are reachable."
+                exit 0
+              fi
+
+              echo "The URL responded, but it is not serving the built Vite artifact yet."
+              sed -n '1,40p' index.html
+            fi
+
+            sleep 5
+          done
+
+          echo "GitHub Pages smoke test failed after retries."
+          exit 1
