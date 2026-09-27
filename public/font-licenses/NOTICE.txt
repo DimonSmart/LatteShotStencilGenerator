@@ -1,0 +1,27 @@
+Bundled caption font notices
+============================
+
+Font source snapshot:
+google/fonts @ 23e54b51ddffbc7713c583748e3bd86f62b1fa4a
+
+Poiret One
+Copyright 2011 The Poiret One Project Authors (https://github.com/alexeiva/poiretone)
+Source: ofl/poiretone/PoiretOne-Regular.ttf
+
+Russo One
+Copyright (c) 2011-2012, Jovanny Lemonad (jovanny.ru), with Reserved Font Name "Russo"
+Source: ofl/russoone/RussoOne-Regular.ttf
+
+Neucha
+Copyright (c) 2008-2010 by Jovanny Lemonad (http://www.jovanny.ru)
+Source: ofl/neucha/Neucha.ttf
+
+PT Mono
+Copyright (c) 2011, ParaType Ltd. (http://www.paratype.com/public),
+with Reserved Font Names "PT Sans", "PT Serif", "PT Mono" and "ParaType".
+Source: ofl/ptmono/PTM55FT.ttf
+
+All four fonts are distributed under the SIL Open Font License 1.1. See
+OFL-1.1.txt in this directory. scripts/prepare-fonts.mjs downloads the exact
+pinned files, verifies each Git blob SHA, and embeds them into the static build.
+The running application does not fetch fonts from a CDN or use system fonts.

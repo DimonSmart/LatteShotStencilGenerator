@@ -18,7 +18,8 @@ export interface ProjectSettings {
   artworkY: number;
   artworkScale: number;
   caption: string;
-  captionFont: import('./font-outline-adapter').BundledFontId;
+  captionFont: import('./font-catalog').BundledFontId;
+  captionAlignment: import('./caption-layout').CaptionAlignment;
   captionX: number;
   captionY: number;
   captionSize: number;
@@ -76,6 +77,7 @@ const initialSettings: ProjectSettings = {
   artworkScale: 1,
   caption: '',
   captionFont: 'stencil-block',
+  captionAlignment: 'center',
   captionX: 6.479,
   captionY: 80.853,
   captionSize: 8,

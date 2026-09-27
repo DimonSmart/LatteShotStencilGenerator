@@ -13,3 +13,16 @@ describe('bridge controls', () => {
     expect(mainSource).toContain("'bridgeWidth', 'bridgeCount', 'caption'");
   });
 });
+
+describe('caption controls', () => {
+  it('offers left, centered-by-default, and right alignment', () => {
+    expect(mainSource).toContain('data-setting="captionAlignment"');
+    expect(mainSource).toContain('<option value="center" selected>Center</option>');
+    expect(mainSource).toContain("'captionAlignment'");
+  });
+
+  it('builds the font picker from the bundled font catalog', () => {
+    expect(mainSource).toContain('bundledFonts.map');
+    expect(mainSource).toContain('captionFontOptions');
+  });
+});

@@ -4,11 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "test": "vitest run",
+    "dev": "npm run prepare:fonts && vite",
+    "build": "npm run prepare:fonts && tsc --noEmit && vite build",
+    "test": "npm run prepare:fonts && vitest run",
     "check:static": "node scripts/check-static-build.mjs",
-    "verify": "npm run test && npm run build && npm run check:static"
+    "verify": "npm run test && npm run build && npm run check:static",
+    "prepare:fonts": "node scripts/prepare-fonts.mjs"
   },
   "dependencies": {
     "@jscadui/3mf-export": "0.5.0",

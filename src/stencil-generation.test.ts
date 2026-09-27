@@ -207,8 +207,8 @@ describe('stencil generation', () => {
 
   it('omits empty captions and embosses valid closed glyph outlines onto the top surface', async () => {
     const api = await ManifoldModule(); api.setup();
-    const empty = generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: '', font: 'stencil-block', x: 2, y: 2, size: 4, embossHeight: 0.35 });
-    const embossed = generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', x: 2, y: 2, size: 4, embossHeight: 0.35 });
+    const empty = generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: '', font: 'stencil-block', alignment: 'left', x: 2, y: 2, size: 4, embossHeight: 0.35 });
+    const embossed = generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', alignment: 'left', x: 2, y: 2, size: 4, embossHeight: 0.35 });
     expect(empty.caption).toBeUndefined();
     expect(embossed.caption?.indices.length).toBeGreaterThan(0);
     expect(Math.max(...embossed.positions.filter((_, index) => index % 3 === 2))).toBeCloseTo(2.35, 4);
@@ -221,7 +221,7 @@ describe('stencil generation', () => {
 
   it('reports caption placements that cannot produce printable geometry', async () => {
     const api = await ManifoldModule(); api.setup();
-    expect(() => generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', x: 30, y: 2, size: 4, embossHeight: 0.35 })).toThrow(/outside/i);
-    expect(() => generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', x: 18, y: 2, size: 4, embossHeight: 0.35 })).toThrow(/fit completely/i);
+    expect(() => generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', alignment: 'left', x: 30, y: 2, size: 4, embossHeight: 0.35 })).toThrow(/outside/i);
+    expect(() => generateStencil(api, template, oneOpening, placement, rectangle, { width: 0.8, count: 1 }, { text: 'A', font: 'stencil-block', alignment: 'left', x: 9, y: 2, size: 4, embossHeight: 0.35 })).toThrow(/fit completely/i);
   });
 });

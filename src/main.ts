@@ -4,10 +4,12 @@ import { ProjectStore, type ProjectSettings, type ProjectState } from './project
 import { StencilViewport } from './viewport';
 import { serializeStencil, type StencilExportFormat } from './stencil-export-adapter';
 import { loadDefaultTemplate } from './bundled-template';
+import { bundledFonts } from './font-catalog';
 
 const app = document.querySelector<HTMLElement>('#app');
 if (!app) throw new Error('Application root is unavailable.');
 let artworkSource: string | undefined;
+const captionFontOptions = bundledFonts.map((font) => `<option value="${font.id}">${font.name}</option>`).join('');
 
 app.innerHTML = `
   <header><div><p class="eyebrow">Browser-native workspace</p><h1>Latte Shot Stencil Generator</h1></div><p>All files stay in this browser tab.</p></header>
@@ -30,8 +32,9 @@ app.innerHTML = `
       </section>
       <section><h2>Caption</h2>
         <label>Text <input data-setting="caption" type="text" maxlength="80" /></label>
-        <label>Font <select data-setting="captionFont"><option value="stencil-block">Stencil Block (public domain)</option></select></label>
-        <label>X (mm) <input data-setting="captionX" type="number" step="0.1" value="6.479" /></label>
+        <label>Font <select data-setting="captionFont">${captionFontOptions}</select></label>
+        <label>Alignment <select data-setting="captionAlignment"><option value="left">Left</option><option value="center" selected>Center</option><option value="right">Right</option></select></label>
+        <label>Side inset (mm) <input data-setting="captionX" type="number" min="0" step="0.1" value="6.479" /></label>
         <label>Y (mm) <input data-setting="captionY" type="number" step="0.1" value="80.853" /></label>
         <label>Size (mm) <input data-setting="captionSize" type="number" min="1" step="0.5" value="8" /></label>
         <label>Emboss height (mm) <input data-setting="captionEmbossHeight" type="number" min="0.05" step="0.05" value="0.35" /></label>
@@ -106,7 +109,7 @@ artworkInput.addEventListener('change', async () => {
 document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting]').forEach((input) => input.addEventListener('input', () => {
   const key = input.dataset.setting as keyof ProjectSettings;
   const value = input.type === 'number' ? Number(input.value) : input.value;
-  const regeneratesStencil = ['artworkLeft', 'artworkRight', 'artworkTop', 'artworkBottom', 'artworkX', 'artworkY', 'artworkScale', 'bridgeWidth', 'bridgeCount', 'caption', 'captionFont', 'captionX', 'captionY', 'captionSize', 'captionEmbossHeight'].includes(key);
+  const regeneratesStencil = ['artworkLeft', 'artworkRight', 'artworkTop', 'artworkBottom', 'artworkX', 'artworkY', 'artworkScale', 'bridgeWidth', 'bridgeCount', 'caption', 'captionFont', 'captionAlignment', 'captionX', 'captionY', 'captionSize', 'captionEmbossHeight'].includes(key);
   const state = artworkSource && regeneratesStencil
     ? store.update({ settings: { [key]: value }, stencil: undefined, processing: { stage: 'placement', message: 'Updating artwork placement in the geometry worker…' } })
     : store.update({ settings: { [key]: value } });

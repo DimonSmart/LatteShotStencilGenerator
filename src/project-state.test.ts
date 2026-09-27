@@ -28,6 +28,7 @@ describe('bundled blank-card layout defaults', () => {
       artworkRight: 6.479,
       artworkTop: 5.864,
       artworkBottom: 33.029,
+      captionAlignment: 'center',
       captionX: 6.479,
       captionY: 80.853,
     });

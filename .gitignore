@@ -40,3 +40,6 @@ Desktop.ini
 
 # Local publish artifacts
 .artifacts/
+
+# Generated, hash-verified bundled font payloads
+src/assets/fonts/*.b64
