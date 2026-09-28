@@ -96,7 +96,10 @@ function threeMf(stencil: GeneratedStencil, triangles: readonly Triangle[], base
     '_rels/.rels': strToU8('<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>'),
     '3D/3dmodel.model': strToU8(model),
   };
-  if (hasCaptionParts) files['Metadata/model_settings.config'] = strToU8(crealityModelSettings());
+  if (hasCaptionParts) {
+    files['Metadata/model_settings.config'] = strToU8(crealityModelSettings());
+    files['Metadata/project_settings.config'] = strToU8(crealityProjectSettings(baseColor, captionColor));
+  }
   return zipSync(files);
 }
 
@@ -136,6 +139,18 @@ function crealityModelSettings(): string {
     <assemble_item object_id="4" instance_id="0" transform="1 0 0 0 1 0 0 0 1 0 0 0" offset="0 0 0"/>
   </assemble>
 </config>`;
+}
+
+function crealityProjectSettings(baseColor: string, captionColor: string): string {
+  return JSON.stringify({
+    from: 'project',
+    name: 'project_settings',
+    filament_colour: [baseColor.slice(0, 7), captionColor.slice(0, 7)],
+    filament_type: ['PLA', 'PLA'],
+    filament_settings_id: ['', ''],
+    filament_diameter: ['1.75', '1.75'],
+    different_settings_to_system: ['', '', '', ''],
+  }, null, 2);
 }
 
 function color(value: string, region: string): string {

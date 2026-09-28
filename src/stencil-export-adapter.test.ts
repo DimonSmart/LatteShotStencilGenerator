@@ -25,6 +25,7 @@ describe('stencil export adapter', () => {
     expect(model).toContain('unit="millimeter"');
     expect(model).toContain('displaycolor="#F4EDE4FF"');
     expect(model).not.toContain('name="Caption"');
+    expect(files['Metadata/project_settings.config']).toBeUndefined();
   });
 
   it('exports base and caption as distinct material-assigned 3MF parts', () => {
@@ -43,6 +44,7 @@ describe('stencil export adapter', () => {
     const files = unzipSync(serializeStencil({ stencil: raisedStencil, baseColor: '#f4ede4', captionColor: '#6a3a22' }, '3mf'));
     const model = strFromU8(files['3D/3dmodel.model']);
     const modelSettings = strFromU8(files['Metadata/model_settings.config']);
+    const projectSettings = JSON.parse(strFromU8(files['Metadata/project_settings.config']));
     expect(model).toContain('name="Base" displaycolor="#F4EDE4FF"');
     expect(model).toContain('name="Caption" displaycolor="#6A3A22FF"');
     expect(model).toContain('<object id="2" type="model" name="Base" pid="1" pindex="0">');
@@ -55,6 +57,11 @@ describe('stencil export adapter', () => {
     expect(modelSettings).toContain('<metadata key="extruder" value="1"/>');
     expect(modelSettings).toContain('<part id="3" subtype="normal_part">');
     expect(modelSettings).toContain('<metadata key="extruder" value="2"/>');
+    expect(projectSettings.filament_colour).toEqual(['#F4EDE4', '#6A3A22']);
+    expect(projectSettings.filament_type).toEqual(['PLA', 'PLA']);
+    expect(projectSettings.filament_settings_id).toEqual(['', '']);
+    expect(projectSettings.filament_diameter).toEqual(['1.75', '1.75']);
+    expect(projectSettings.different_settings_to_system).toHaveLength(4);
   });
 
   it('rejects non-watertight geometry before either format is offered', () => {
