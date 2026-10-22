@@ -5,6 +5,7 @@ import { StencilViewport } from './viewport';
 import { serializeStencil, type StencilExportFormat } from './stencil-export-adapter';
 import { loadDefaultTemplate } from './bundled-template';
 import { bundledFonts } from './font-catalog';
+import { getFileCardPresentation, type FileKind, type FilePhase } from './file-card-state';
 
 const app = document.querySelector<HTMLElement>('#app');
 if (!app) throw new Error('Application root is unavailable.');
@@ -27,10 +28,32 @@ app.innerHTML = `
       <section class="panel project-files">
         <div class="section-heading"><h2>Project Files</h2><span>Template and artwork</span></div>
         <div class="file-grid">
-          <label>3D template <input id="template" type="file" accept=".stl,.3mf" /></label>
-          <label>SVG artwork <input id="artwork" type="file" accept="image/svg+xml,.svg" /></label>
+          <div class="file-card" id="template-file-card" data-state="loading">
+            <svg class="file-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m12 2 9 5-9 5-9-5 9-5Z" /><path d="M3 7v10l9 5 9-5V7M12 12v10" />
+            </svg>
+            <div class="file-card-copy">
+              <div class="file-card-title">3D template</div>
+              <div class="file-card-meta"><span class="file-card-indicator" aria-hidden="true"></span><span id="template-file-detail" class="file-card-detail" aria-live="polite">Loading default template…</span></div>
+              <p id="template-file-error" class="file-card-error" hidden></p>
+            </div>
+            <button id="choose-template" class="file-card-action" type="button" aria-label="Choose 3D template file">Choose</button>
+            <input id="template" type="file" accept=".stl,.3mf" hidden />
+          </div>
+          <div class="file-card" id="artwork-file-card" data-state="empty">
+            <svg class="file-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" />
+            </svg>
+            <div class="file-card-copy">
+              <div class="file-card-title">SVG artwork</div>
+              <div class="file-card-meta"><span class="file-card-indicator" aria-hidden="true"></span><span id="artwork-file-detail" class="file-card-detail" aria-live="polite">No artwork selected</span></div>
+              <p id="artwork-file-error" class="file-card-error" hidden></p>
+            </div>
+            <button id="choose-artwork" class="file-card-action" type="button" aria-label="Upload SVG artwork">Upload</button>
+            <input id="artwork" type="file" accept="image/svg+xml,.svg" hidden />
+          </div>
         </div>
-        <small>Upload a printable card template and the artwork that should be cut into it.</small>
+        <small>Upload an STL/3MF card template and SVG artwork for the cutout.</small>
       </section>
 
       <section class="panel">
@@ -135,6 +158,12 @@ app.innerHTML = `
 const store = new ProjectStore();
 const worker = new GeometryWorkerClient((result) => {
   const applied = result.kind === 'template' ? store.applyGeometry(result) : result.kind === 'artwork' ? store.applyArtwork(result) : store.applyStencil(result);
+  if (applied && result.kind === 'template') {
+    updateFileCard('template', result.isValid ? 'ready' : 'error', store.snapshot.templateFile?.name, result.message);
+  }
+  if (applied && result.kind === 'artwork') {
+    updateFileCard('artwork', result.isValid ? 'ready' : 'error', store.snapshot.artworkFile?.name, result.message);
+  }
   if (applied && result.kind === 'template' && result.isValid && artworkSource) worker.importArtwork(store.snapshot, artworkSource, true);
   if (applied && result.kind === 'artwork' && result.isValid) {
     store.setProcessing('bridge-generation', 'Generating bridges and printable solid in the geometry worker…');
@@ -214,21 +243,56 @@ store.subscribe((state) => {
   });
 });
 
+function updateFileCard(kind: FileKind, phase: FilePhase, fileName?: string, errorMessage?: string): void {
+  const card = document.querySelector<HTMLElement>(`#${kind}-file-card`)!;
+  const detail = document.querySelector<HTMLElement>(`#${kind}-file-detail`)!;
+  const error = document.querySelector<HTMLElement>(`#${kind}-file-error`)!;
+  const action = document.querySelector<HTMLButtonElement>(`#choose-${kind}`)!;
+  const presentation = getFileCardPresentation(kind, phase, fileName);
+  card.dataset.state = phase;
+  detail.textContent = presentation.detail;
+  detail.title = fileName ?? '';
+  error.textContent = phase === 'error' ? (errorMessage ?? 'Could not load the selected file.') : '';
+  error.hidden = phase !== 'error';
+  action.textContent = presentation.action;
+  action.setAttribute('aria-label', presentation.actionLabel);
+}
+
 const templateInput = document.querySelector<HTMLInputElement>('#template')!;
-templateInput.addEventListener('change', async () => {
-  const templateFile = (templateInput.files ?? [])[0];
-  if (!templateFile) return;
-  lastValidStencil = undefined;
-  await importTemplate(templateFile);
-});
 const artworkInput = document.querySelector<HTMLInputElement>('#artwork')!;
-artworkInput.addEventListener('change', async () => {
-  const artworkFile = (artworkInput.files ?? [])[0];
-  if (!artworkFile) return;
+document.querySelector('#choose-template')!.addEventListener('click', () => templateInput.click());
+document.querySelector('#choose-artwork')!.addEventListener('click', () => artworkInput.click());
+
+let userSelectedTemplate = false;
+let templateRequest = 0;
+let artworkRequest = 0;
+templateInput.addEventListener('change', () => {
+  const templateFile = templateInput.files?.[0];
+  templateInput.value = '';
+  if (!templateFile) return;
+  userSelectedTemplate = true;
   lastValidStencil = undefined;
-  artworkSource = await artworkFile.text();
-  const state = store.update({ artworkFile, artwork: undefined, stencil: undefined, processing: { stage: 'artwork-import', message: `Validating ${artworkFile.name} in the geometry worker…` } });
-  worker.importArtwork(state, artworkSource, true);
+  void importTemplate(templateFile);
+});
+artworkInput.addEventListener('change', async () => {
+  const artworkFile = artworkInput.files?.[0];
+  artworkInput.value = '';
+  if (!artworkFile) return;
+  const request = ++artworkRequest;
+  lastValidStencil = undefined;
+  updateFileCard('artwork', 'loading', artworkFile.name);
+  try {
+    const source = await artworkFile.text();
+    if (request !== artworkRequest) return;
+    artworkSource = source;
+    const state = store.update({ artworkFile, artwork: undefined, stencil: undefined, processing: { stage: 'artwork-import', message: `Validating ${artworkFile.name} in the geometry worker…` } });
+    worker.importArtwork(state, source, true);
+  } catch (failure) {
+    if (request !== artworkRequest) return;
+    const message = failure instanceof Error ? failure.message : 'Unable to read the SVG file.';
+    updateFileCard('artwork', 'error', artworkFile.name, message);
+    store.setProcessing('error', message);
+  }
 });
 document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting]').forEach((input) => input.addEventListener('input', () => {
   if (input instanceof HTMLInputElement && input.type === 'radio' && !input.checked) return;
@@ -271,13 +335,29 @@ function setPreviewExpanded(expanded: boolean): void {
 }
 
 async function importTemplate(templateFile: File): Promise<void> {
-  const state = store.update({ templateFile, stencil: undefined, processing: { stage: 'template-import', message: `Importing ${templateFile.name} in the geometry worker…` } });
-  worker.importTemplate(state, templateFile.name, await templateFile.arrayBuffer());
+  const request = ++templateRequest;
+  updateFileCard('template', 'loading', templateFile.name);
+  try {
+    const bytes = await templateFile.arrayBuffer();
+    if (request !== templateRequest) return;
+    const state = store.update({ templateFile, stencil: undefined, processing: { stage: 'template-import', message: `Importing ${templateFile.name} in the geometry worker…` } });
+    worker.importTemplate(state, templateFile.name, bytes);
+  } catch (failure) {
+    if (request !== templateRequest) return;
+    const message = failure instanceof Error ? failure.message : 'Unable to read the template file.';
+    updateFileCard('template', 'error', templateFile.name, message);
+    store.setProcessing('error', message);
+  }
 }
 
 void loadDefaultTemplate()
-  .then(importTemplate)
-  .catch((error: unknown) => store.setProcessing('error', error instanceof Error ? error.message : 'The bundled blank card could not be loaded.'));
+  .then((templateFile) => { if (!userSelectedTemplate) return importTemplate(templateFile); })
+  .catch((failure: unknown) => {
+    if (userSelectedTemplate) return;
+    const message = failure instanceof Error ? failure.message : 'The bundled blank card could not be loaded.';
+    updateFileCard('template', 'error', 'Blank_Card.stl', message);
+    store.setProcessing('error', message);
+  });
 
 function downloadCurrentStencil(format: StencilExportFormat): void {
   const state = store.snapshot;

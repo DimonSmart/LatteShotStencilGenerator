@@ -101,3 +101,29 @@ describe('preview coordinates', () => {
     expect(mainSource).toContain("state.settings.captionColor, state.geometry?.isValid ? state.geometry.template : undefined");
   });
 });
+
+describe('project file cards', () => {
+  it('replaces native file pickers with stateful labelled upload cards', () => {
+    expect(mainSource).toContain('id="template-file-card"');
+    expect(mainSource).toContain('id="artwork-file-card"');
+    expect(mainSource).toContain('id="template-file-detail"');
+    expect(mainSource).toContain('id="artwork-file-detail"');
+    expect(mainSource).toContain('id="choose-template"');
+    expect(mainSource).toContain('id="choose-artwork"');
+    expect(mainSource).toContain('id="template" type="file" accept=".stl,.3mf" hidden');
+    expect(mainSource).toContain('id="artwork" type="file" accept="image/svg+xml,.svg" hidden');
+  });
+
+  it('shows success only after validation, and displays import errors', () => {
+    expect(mainSource).toContain("if (applied && result.kind === 'template')");
+    expect(mainSource).toContain("if (applied && result.kind === 'artwork')");
+    expect(mainSource).toContain("result.isValid ? 'ready' : 'error'");
+    expect(mainSource).toContain("detail.textContent = presentation.detail");
+    expect(mainSource).toContain("error.textContent = phase === 'error'");
+  });
+
+  it('does not allow a delayed bundled template to overwrite a manual selection', () => {
+    expect(mainSource).toContain('userSelectedTemplate = true;');
+    expect(mainSource).toContain('if (!userSelectedTemplate) return importTemplate(templateFile)');
+  });
+});
