@@ -1,7 +1,9 @@
 /// <reference types="vite/client" />
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import stylesheet from './styles.css?raw';
+
+const stylesheet = readFileSync(new URL('./styles.css', import.meta.url), 'utf8');
 
 const mobileStart = '@media (max-width: 900px) {';
 const nextBreakpoint = '@media (max-width: 620px) {';
